@@ -57,6 +57,8 @@ export type WikiSummary = {
   type?: string
   extract?: string
   content_urls?: { desktop?: { page?: string } }
+  thumbnail?: { source?: string }
+  originalimage?: { source?: string }
 }
 
 function firstSentences(text: string, max = 260): string {
@@ -79,5 +81,8 @@ export function noteFromSummary(card: Trivia, summary: WikiSummary): WikiNote | 
   if (!/\balbum\b|\bep\b|\bsingle\b|\bsoundtrack\b/.test(lower)) return undefined
   if (artistWord && !lower.includes(artistWord)) return undefined
 
-  return { extract: firstSentences(extract), url }
+  // On an album page the lead image is the cover.
+  const image = (summary.originalimage?.source ?? summary.thumbnail?.source)?.split('?')[0]
+
+  return { extract: firstSentences(extract), url, imageUrl: image }
 }

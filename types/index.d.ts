@@ -9,10 +9,11 @@ export type Trivia = {
   source: 'deck' | 'discogs' | 'web'
   releaseId?: number
   url?: string
+  coverUrl?: string
   isEnriched?: boolean
 }
 
-export type WikiNote = { extract: string; url: string }
+export type WikiNote = { extract: string; url: string; imageUrl?: string }
 
 declare module 'claude-code' {
   interface PluginState {

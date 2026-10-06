@@ -18,6 +18,7 @@ const PAGE = {
       formats: [{ name: 'Vinyl', descriptions: ['7"', 'Single', '45 RPM'] }],
       genres: ['Electronic', 'Pop'],
       styles: ['Synth-pop'],
+      cover_image: 'https://i.discogs.com/cover.jpg',
     },
   }],
 }
@@ -27,6 +28,7 @@ test('builds a trivia card from a Discogs collection item', async () => {
   expect(card?.album).toBe('Never Gonna Give You Up')
   expect(card?.artist).toBe('Rick Astley')
   expect(card?.url).toBe('https://www.discogs.com/release/249504')
+  expect(card?.coverUrl).toBe('https://i.discogs.com/cover.jpg')
   expect(card?.fact).toBe('Your copy: Vinyl, 7", Single, 45 RPM on RCA')
   expect(typeof card?.question).toBe('string')
   expect(typeof card?.answer).toBe('string')
@@ -111,7 +113,9 @@ test('keeps a Wikipedia summary only when it is the right album', async () => {
     type: 'standard',
     extract: 'Rumours is the eleventh studio album by the British and American rock band Fleetwood Mac, released on 4 February 1977, by Warner Bros. Records. Largely recorded in California in 1976, it was produced by the band with Ken Caillat and Richard Dashut.',
     content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Rumours_(album)' } },
+    originalimage: { source: 'https://upload.wikimedia.org/wikipedia/en/f/fb/FMacRumours.PNG?utm_source=en.wikipedia.org' },
   })
+  expect(note?.imageUrl).toBe('https://upload.wikimedia.org/wikipedia/en/f/fb/FMacRumours.PNG')
   expect(note?.url).toBe('https://en.wikipedia.org/wiki/Rumours_(album)')
   expect(note?.extract.startsWith('Rumours is the eleventh studio album')).toBe(true)
   expect(noteFromSummary(card, {

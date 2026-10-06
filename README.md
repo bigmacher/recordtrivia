@@ -8,6 +8,8 @@ A Claude Code mod that spins record and music trivia while Claude works.
 
 - **Trivia from the internet:** every third card is a multiple-choice music question from [Open Trivia DB](https://opentdb.com). Album cards also get a short summary from Wikipedia, with a link to the full article. You can turn this off with the **Trivia from the internet** setting.
 
+- **Album covers:** each card links to the cover image, from your Discogs release or the album's Wikipedia page. When the question is about the cover itself, the link waits until the answer is revealed.
+
 ## Install
 
 ```

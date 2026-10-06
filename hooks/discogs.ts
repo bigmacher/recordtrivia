@@ -14,6 +14,7 @@ export type BasicInformation = {
   formats?: Format[]
   genres?: string[]
   styles?: string[]
+  cover_image?: string
 }
 
 export type CollectionPage = {
@@ -78,6 +79,7 @@ export function cardFromCollection(info: BasicInformation, dateAdded?: string): 
     source: 'discogs',
     releaseId: info.id,
     url: `https://www.discogs.com/release/${info.id}`,
+    coverUrl: info.cover_image && !info.cover_image.includes('spacer.gif') ? info.cover_image : undefined,
   }
 }
 

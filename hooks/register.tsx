@@ -149,8 +149,19 @@ async function syncCollection($: EngineInterface, settings: Settings) {
   void prepareAt($, settings, 1)
 }
 
+function coverOf(card: Trivia, note?: WikiNote | null): string | undefined {
+  return card.coverUrl ?? note?.imageUrl
+}
+
+// The cover would give away a question about the cover, so it waits for the answer.
+function isCoverShown(card: Trivia, revealed: boolean): boolean {
+  return revealed || !/cover|sleeve|artwork/i.test(card.question ?? '')
+}
+
 function cardText(card: Trivia, revealed: boolean, note?: WikiNote): string {
   const lines = [`💿 ${card.album}${card.artist ? ` — ${card.artist}` : ''}${card.year ? ` (${card.year})` : ''}`]
+  const cover = coverOf(card, note)
+  if (cover && isCoverShown(card, revealed)) lines.push(`🖼️ Cover: ${cover}`)
   if (card.question) lines.push('', `Q: ${card.question}`)
   card.choices?.forEach((choice, i) => {
     const mark = revealed && choice === card.answer ? ' ✅' : ''
@@ -233,6 +244,7 @@ export const register: Register = (on, options) => {
     if (action === 'next') await nextCard($, settings)
     if (action === 'answer' || action === 'reveal') await update($, isRevealed, () => true)
     const { card } = await cardAt($, await read($, index))
+    if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
     const note = (await read($, wiki))[wikiKey(card)]
 
     return { text: cardText(card, await read($, isRevealed), note ?? undefined) }
@@ -241,6 +253,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'answer' }, async $ => {
     await update($, isRevealed, () => true)
     const { card } = await cardAt($, await read($, index))
+    if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
     const note = (await read($, wiki))[wikiKey(card)]
 
     return { text: cardText(card, true, note ?? undefined) }
@@ -249,8 +262,10 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'next' }, async $ => {
     await nextCard($, settings)
     const { card } = await cardAt($, await read($, index))
+    if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
+    const note = (await read($, wiki))[wikiKey(card)]
 
-    return { text: cardText(card, false) }
+    return { text: cardText(card, false, note ?? undefined) }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -310,6 +325,7 @@ export const register: Register = (on, options) => {
             {card.year ? <Text dimColor>{String(card.year)}</Text> : null}
             {card.url ? <Link href={card.url} label="View on Discogs" /> : null}
             {note ? <Link href={note.url} label="Read on Wikipedia" /> : null}
+            {coverOf(card, note) && isCoverShown(card, revealed) ? <Link href={coverOf(card, note)!} label="See the cover" /> : null}
           </Box>
         </Box>
         <Text> </Text>
