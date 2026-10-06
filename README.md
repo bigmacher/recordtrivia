@@ -3,8 +3,10 @@
 A Claude Code mod that spins record and music trivia while Claude works.
 
 - **While Claude is working**, a band above the prompt shows an album, a trivia question, and then reveals the answer and a fact halfway through each card.
-- **`/trivia`** opens a pane with a little vinyl record, plus **Reveal** (`r`), **Next record** (`n`) and **Sync Discord** (`s`) buttons.
+- **`/trivia`** opens a pane with a little vinyl record, plus **Reveal** (`r`), **Next record** (`n`) and **Sync** (`s`) buttons.
 - **Your Discogs collection:** the mod pulls your records from Discogs and builds questions from them: release year, label and catalog number, genre and style, the opening track, how many tracks, how many Discogs users own that pressing, and when you added it. Each card links to the release page on Discogs.
+
+- **Trivia from the internet:** every third card is a multiple-choice music question from [Open Trivia DB](https://opentdb.com). Album cards also get a short summary from Wikipedia, with a link to the full article. You can turn this off with the **Trivia from the internet** setting.
 
 ## Install
 

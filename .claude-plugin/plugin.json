@@ -4,7 +4,7 @@
   "author": {
     "name": "bigmacher"
   },
-  "description": "Record & music trivia above the prompt while Claude works, built from your Discogs collection",
+  "description": "Record & music trivia above the prompt while Claude works, from your Discogs collection, Open Trivia DB and Wikipedia",
   "types": "./types/index.d.ts",
   "userConfig": {
     "discogsUsername": {
@@ -19,6 +19,13 @@
       "title": "Discogs personal access token",
       "description": "Needed if your collection is private (Discogs > Settings > Developers > Generate new token).",
       "sensitive": true,
+      "required": false
+    },
+    "webTrivia": {
+      "type": "boolean",
+      "title": "Trivia from the internet",
+      "description": "Mix in music quiz questions from Open Trivia DB and album facts from Wikipedia.",
+      "default": true,
       "required": false
     },
     "rotateSeconds": {

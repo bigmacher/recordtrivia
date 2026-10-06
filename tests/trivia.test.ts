@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
+import { cardsFromOpenTdb, noteFromSummary, wikiCandidates } from '../hooks/web'
 
 const SCROLL = { offset: 0, bodyRows: 10 }
 
@@ -84,4 +85,38 @@ test('pane reveals the answer and moves to the next record', async $ => {
     expect(await ui.find({ type: 'Text', text: /^A:/ })).toBeUndefined()
     await ui.unmount()
   }
+})
+
+test('turns Open Trivia DB questions into multiple-choice cards', async () => {
+  const [card] = cardsFromOpenTdb({
+    response_code: 0,
+    results: [{
+      type: 'multiple',
+      question: 'Who%20is%20the%20frontman%20of%20Muse%3F',
+      correct_answer: 'Matt%20Bellamy',
+      incorrect_answers: ['Dominic%20Howard', 'Thom%20Yorke', 'Jonny%20Greenwood'],
+    }],
+  })
+  expect(card?.question).toBe('Who is the frontman of Muse?')
+  expect(card?.answer).toBe('Matt Bellamy')
+  expect(card?.choices?.length).toBe(4)
+  expect(card?.choices).toContain('Matt Bellamy')
+  expect(cardsFromOpenTdb({ response_code: 5, results: [] }).length).toBe(0)
+})
+
+test('keeps a Wikipedia summary only when it is the right album', async () => {
+  const card = { album: 'Rumours', artist: 'Fleetwood Mac', source: 'deck' as const }
+  expect(wikiCandidates(card)[0]).toBe('Rumours_(Fleetwood_Mac_album)')
+  const note = noteFromSummary(card, {
+    type: 'standard',
+    extract: 'Rumours is the eleventh studio album by the British and American rock band Fleetwood Mac, released on 4 February 1977, by Warner Bros. Records. Largely recorded in California in 1976, it was produced by the band with Ken Caillat and Richard Dashut.',
+    content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Rumours_(album)' } },
+  })
+  expect(note?.url).toBe('https://en.wikipedia.org/wiki/Rumours_(album)')
+  expect(note?.extract.startsWith('Rumours is the eleventh studio album')).toBe(true)
+  expect(noteFromSummary(card, {
+    type: 'standard',
+    extract: 'A rumour is a piece of unverified information.',
+    content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Rumour' } },
+  })).toBeUndefined()
 })

@@ -5,11 +5,14 @@ export type Trivia = {
   fact?: string
   question?: string
   answer?: string
-  source: 'deck' | 'discogs'
+  choices?: string[]
+  source: 'deck' | 'discogs' | 'web'
   releaseId?: number
   url?: string
   isEnriched?: boolean
 }
+
+export type WikiNote = { extract: string; url: string }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -17,6 +20,8 @@ declare module 'claude-code' {
       index: number
       isRevealed: boolean
       fromDiscogs: Trivia[]
+      fromWeb: Trivia[]
+      wiki: Record<string, WikiNote | null>
       discogsStatus: string
     }
   }
