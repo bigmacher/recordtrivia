@@ -21,6 +21,7 @@ const fromDiscogs = atom({ plugin: 'record-trivia', key: 'fromDiscogs' } as cons
 const fromWeb = atom({ plugin: 'record-trivia', key: 'fromWeb' } as const, [])
 const wiki = atom({ plugin: 'record-trivia', key: 'wiki' } as const, {})
 const covers = atom({ plugin: 'record-trivia', key: 'covers' } as const, {})
+const awaiting = atom({ plugin: 'record-trivia', key: 'awaiting' } as const, 'none')
 const discogsStatus = atom({ plugin: 'record-trivia', key: 'discogsStatus' } as const, 'not set up')
 
 type Settings = { username: string; token: string; isWebOn: boolean }
@@ -174,9 +175,9 @@ function cardText(card: Trivia, revealed: boolean, note?: WikiNote): string {
     if (card.fact) lines.push('', `♪ ${card.fact}`)
     if (note) lines.push('', note.extract, note.url)
     if (card.url) lines.push(card.url)
-    lines.push('', 'Type /next for another record.')
+    lines.push('', 'Next? Reply yes.')
   } else {
-    lines.push('', 'Type /answer to reveal it, or /next to skip.')
+    lines.push('', 'Reply with "answer" to reveal it, or "next" to skip.')
   }
 
   return lines.join('\n')
@@ -219,6 +220,7 @@ async function cardReply($: EngineInterface, settings: Settings): Promise<string
   if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
   const note = (await read($, wiki))[wikiKey(card)] ?? undefined
   if (isCoverShown(card, revealed)) await fetchCover($, card, note)
+  await update($, awaiting, () => (revealed ? 'next' : 'answer'))
 
   return cardText(card, revealed, note)
 }
@@ -237,6 +239,18 @@ async function drawCardRow($: EngineInterface, e: RenderInput<'CommandOutput'>, 
       <Text>{withoutCoverLine(e.props.text)}</Text>
     </Box>
   )
+}
+
+const YES = /^(y|ya|yes|yeah|yep|yup|sure|ok|okay|next|another|more|go)[.!]*$/i
+const REVEAL = /^(answer|reveal|tell me|idk|i don'?t know|don'?t know|dunno|no idea|give up|pass)[.!]*$/i
+
+// A short reply right after a card is about the card, not a prompt for Claude.
+function triviaReplyTo(text: string, state: 'answer' | 'next' | 'none'): 'next' | 'answer' | undefined {
+  const reply = text.trim().replace(/[‘’]/g, "'")
+  if (state === 'none' || reply.length > 30) return undefined
+  if (YES.test(reply)) return 'next'
+  if (state === 'answer' && REVEAL.test(reply)) return 'answer'
+  return undefined
 }
 
 export const register: Register = (on, options) => {
@@ -285,6 +299,19 @@ export const register: Register = (on, options) => {
 
     return next(e)
   })
+
+  on('prompt.submit', async ($, e, next) => {
+    const state = await read($, awaiting)
+    const command = triviaReplyTo(e.text, state)
+    if (!command) {
+      if (state !== 'none') await update($, awaiting, () => 'none')
+      return next(e)
+    }
+    await update($, awaiting, () => 'none')
+    $.command.run({ command, args: '' }).catch(() => undefined)
+
+    return { drop: command === 'next' ? '▶ Next record' : '▶ The answer' }
+  }).catch(($, e, next) => next(e))
 
   // A fresh card each time Claude starts working.
   on('turn.start', async ($, e, next) => {

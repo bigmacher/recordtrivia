@@ -26,6 +26,7 @@ declare module 'claude-code' {
       wiki: Record<string, WikiNote | null>
       covers: Record<string, string | null>
       discogsStatus: string
+      awaiting: 'answer' | 'next' | 'none'
     }
   }
 }

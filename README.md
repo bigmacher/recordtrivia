@@ -10,6 +10,8 @@ A Claude Code mod that spins record and music trivia while Claude works.
 
 - **Album covers:** in the Claude app (phone, desktop or web), the card shows the album cover as a picture. It comes from your Discogs release or the album's Wikipedia page, and is downloaded with `curl`. When the question is about the cover itself, the picture waits until you type `/answer`. In a terminal, the card shows a link to the cover instead.
 
+- **Just reply:** after a question, reply "answer" (or "I don't know") to see the answer. After an answer, reply "yes" for the next record. Anything else you type goes to Claude as normal.
+
 ## Install
 
 ```

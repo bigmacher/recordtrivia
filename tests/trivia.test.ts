@@ -129,11 +129,11 @@ test('keeps a Wikipedia summary only when it is the right album', async () => {
 test('/trivia prints the card in the chat, then the answer', async $ => {
   const shown = await $.command.run({ command: 'trivia', args: '' })
   expect(shown?.text).toContain('Q:')
-  expect(shown?.text).toContain('/answer')
+  expect(shown?.text).toContain('"answer"')
   const answered = await $.command.run({ command: 'answer', args: '' })
-  expect(answered?.text).toContain('/next')
+  expect(answered?.text).toContain('Next? Reply yes.')
   const next = await $.command.run({ command: 'next', args: '' })
-  expect(next?.text).toContain('/answer')
+  expect(next?.text).toContain('"next" to skip')
 })
 
 test('wraps a downloaded cover in an SVG the apps can draw', async () => {
@@ -145,4 +145,15 @@ test('wraps a downloaded cover in an SVG the apps can draw', async () => {
   const text = '💿 Purple Rain\n🖼️ Cover: https://example.com/c.jpg\n\nQ: ?'
   expect(coverLineOf(text)).toBe('https://example.com/c.jpg')
   expect(withoutCoverLine(text)).toBe('💿 Purple Rain\n\nQ: ?')
+})
+
+test('"yes" after an answer is taken as next; other prompts pass through', async ($, on) => {
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  await $.command.run({ command: 'answer', args: '' })
+  expect(await $.prompt.submit({ text: 'yes', wait: false })).toEqual({ drop: '▶ Next record' })
+  expect((await $.prompt.submit({ text: 'yes', wait: false }))?.text).toBe('yes')
+  await $.command.run({ command: 'next', args: '' })
+  expect(await $.prompt.submit({ text: "I don't know", wait: false })).toEqual({ drop: '▶ The answer' })
+  await $.command.run({ command: 'next', args: '' })
+  expect((await $.prompt.submit({ text: 'please fix the failing build', wait: false }))?.text).toBe('please fix the failing build')
 })
