@@ -10,6 +10,7 @@ export type Trivia = {
   releaseId?: number
   url?: string
   coverUrl?: string
+  coverThumbUrl?: string
   isEnriched?: boolean
 }
 
@@ -23,6 +24,7 @@ declare module 'claude-code' {
       fromDiscogs: Trivia[]
       fromWeb: Trivia[]
       wiki: Record<string, WikiNote | null>
+      covers: Record<string, string | null>
       discogsStatus: string
     }
   }

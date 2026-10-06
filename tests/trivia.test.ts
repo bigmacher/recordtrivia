@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
+import * as covers from '../hooks/covers'
 import { cardsFromOpenTdb, noteFromSummary, wikiCandidates } from '../hooks/web'
 
 const SCROLL = { offset: 0, bodyRows: 10 }
@@ -133,4 +134,15 @@ test('/trivia prints the card in the chat, then the answer', async $ => {
   expect(answered?.text).toContain('/next')
   const next = await $.command.run({ command: 'next', args: '' })
   expect(next?.text).toContain('/answer')
+})
+
+test('wraps a downloaded cover in an SVG the apps can draw', async () => {
+  const { coverSvg, coverLineOf, wikimediaThumb, withoutCoverLine } = covers
+  expect(wikimediaThumb('https://upload.wikimedia.org/wikipedia/en/9/9c/Princepurplerain.jpg'))
+    .toBe('https://upload.wikimedia.org/wikipedia/en/thumb/9/9c/Princepurplerain.jpg/250px-Princepurplerain.jpg')
+  expect(coverSvg('/9j/4AAQSkZJRg')).toContain('href="data:image/jpeg;base64,/9j/4AAQSkZJRg"')
+  expect(coverSvg('not an image')).toBeUndefined()
+  const text = '💿 Purple Rain\n🖼️ Cover: https://example.com/c.jpg\n\nQ: ?'
+  expect(coverLineOf(text)).toBe('https://example.com/c.jpg')
+  expect(withoutCoverLine(text)).toBe('💿 Purple Rain\n\nQ: ?')
 })

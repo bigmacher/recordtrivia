@@ -1,10 +1,11 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, RenderInput } from 'claude-code'
 
 import type { Trivia, WikiNote } from '../types'
 import { DECK } from './deck'
 import { cardsFromPage, enrichCard } from './discogs'
 import type { CollectionPage, Release } from './discogs'
+import { COVER_PX, MAX_COVER_BASE64, coverLineOf, coverSvg, wikimediaThumb, withoutCoverLine } from './covers'
 import { OPEN_TDB_URL, cardsFromOpenTdb, noteFromSummary, wikiCandidates, wikiKey } from './web'
 import type { OpenTdbResponse, WikiSummary } from './web'
 
@@ -19,6 +20,7 @@ const isRevealed = atom({ plugin: 'record-trivia', key: 'isRevealed' } as const,
 const fromDiscogs = atom({ plugin: 'record-trivia', key: 'fromDiscogs' } as const, [])
 const fromWeb = atom({ plugin: 'record-trivia', key: 'fromWeb' } as const, [])
 const wiki = atom({ plugin: 'record-trivia', key: 'wiki' } as const, {})
+const covers = atom({ plugin: 'record-trivia', key: 'covers' } as const, {})
 const discogsStatus = atom({ plugin: 'record-trivia', key: 'discogsStatus' } as const, 'not set up')
 
 type Settings = { username: string; token: string; isWebOn: boolean }
@@ -180,6 +182,63 @@ function cardText(card: Trivia, revealed: boolean, note?: WikiNote): string {
   return lines.join('\n')
 }
 
+// Downloads a cover as base64 (the host's fetch carries text only).
+async function downloadBase64($: EngineInterface, url: string): Promise<string | undefined> {
+  try {
+    const { exitCode, stdout } = await $.process.run(
+      ['sh', '-c', 'curl -sSfL --max-time 10 -A "$2" "$1" | base64 | tr -d "\\n"', 'sh', url, USER_AGENT],
+      { timeoutMs: 15_000 },
+    )
+    return exitCode === 0 && stdout ? stdout : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// Caches a card's cover under the URL its text shows, so its chat row can find it.
+async function fetchCover($: EngineInterface, card: Trivia, note?: WikiNote) {
+  const shown = coverOf(card, note)
+  if (!shown || shown in (await read($, covers))) return
+  const tries = card.coverUrl ? [card.coverUrl, card.coverThumbUrl] : [wikimediaThumb(shown), shown]
+  let bytes: string | null = null
+  for (const url of tries) {
+    if (!url) continue
+    const got = await downloadBase64($, url)
+    if (got && got.length <= MAX_COVER_BASE64 && coverSvg(got)) {
+      bytes = got
+      break
+    }
+  }
+  // Keep the last dozen; each is up to ~120 KB of text.
+  await update($, covers, all => Object.fromEntries([...Object.entries(all), [shown, bytes] as const].slice(-12)))
+}
+
+async function cardReply($: EngineInterface, settings: Settings): Promise<string> {
+  const { card } = await cardAt($, await read($, index))
+  const revealed = await read($, isRevealed)
+  if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
+  const note = (await read($, wiki))[wikiKey(card)] ?? undefined
+  if (isCoverShown(card, revealed)) await fetchCover($, card, note)
+
+  return cardText(card, revealed, note)
+}
+
+async function drawCardRow($: EngineInterface, e: RenderInput<'CommandOutput'>, next: (e: RenderInput<'CommandOutput'>) => Promise<RenderElement>) {
+  if (e.surface === 'terminal') return next(e)
+  const url = coverLineOf(e.props.text)
+  const bytes = url ? (await read($, covers))[url] : undefined
+  const svg = bytes ? coverSvg(bytes) : undefined
+  if (!svg) return next(e)
+  const { Box, Svg, Text } = $.ui.resolve(e)
+
+  return (
+    <Box flexDirection="column">
+      <Svg source={svg} alt="Album cover" width={COVER_PX} height={COVER_PX} />
+      <Text>{withoutCoverLine(e.props.text)}</Text>
+    </Box>
+  )
+}
+
 export const register: Register = (on, options) => {
   const settings: Settings = {
     username: String(options.discogsUsername ?? '').trim(),
@@ -243,30 +302,26 @@ export const register: Register = (on, options) => {
     }
     if (action === 'next') await nextCard($, settings)
     if (action === 'answer' || action === 'reveal') await update($, isRevealed, () => true)
-    const { card } = await cardAt($, await read($, index))
-    if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
-    const note = (await read($, wiki))[wikiKey(card)]
 
-    return { text: cardText(card, await read($, isRevealed), note ?? undefined) }
+    return { text: await cardReply($, settings) }
   })
 
   on('command.run', { command: 'answer' }, async $ => {
     await update($, isRevealed, () => true)
-    const { card } = await cardAt($, await read($, index))
-    if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
-    const note = (await read($, wiki))[wikiKey(card)]
 
-    return { text: cardText(card, true, note ?? undefined) }
+    return { text: await cardReply($, settings) }
   })
 
   on('command.run', { command: 'next' }, async $ => {
     await nextCard($, settings)
-    const { card } = await cardAt($, await read($, index))
-    if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
-    const note = (await read($, wiki))[wikiKey(card)]
 
-    return { text: cardText(card, false, note ?? undefined) }
+    return { text: await cardReply($, settings) }
   })
+
+  // Draws the card's row in the chat with its cover where the surface draws SVG (the apps).
+  on('ui.render', { component: 'CommandOutput', props: { command: 'trivia' } }, ($, e, next) => drawCardRow($, e, next))
+  on('ui.render', { component: 'CommandOutput', props: { command: 'answer' } }, ($, e, next) => drawCardRow($, e, next))
+  on('ui.render', { component: 'CommandOutput', props: { command: 'next' } }, ($, e, next) => drawCardRow($, e, next))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || !e.props.isWorking) return next(e)
