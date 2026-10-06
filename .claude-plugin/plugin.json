@@ -1,0 +1,30 @@
+{
+  "name": "record-trivia",
+  "version": "0.1.0",
+  "author": { "name": "bigmacher" },
+  "description": "Record & music trivia above the prompt while Claude works, with an optional feed from a Discord channel",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "discordBotToken": {
+      "type": "string",
+      "title": "Discord bot token",
+      "description": "Bot token used to read trivia from a Discord channel. Leave empty to use the built-in deck only.",
+      "sensitive": true,
+      "required": false
+    },
+    "discordChannelId": {
+      "type": "string",
+      "title": "Discord channel ID",
+      "description": "Channel to pull trivia from. Post lines like: !trivia Album | Artist | Year | Fact   or   !q Question | Answer",
+      "default": "",
+      "required": false
+    },
+    "rotateSeconds": {
+      "type": "number",
+      "title": "Seconds per card",
+      "description": "How long each trivia card shows before the next one (the answer is revealed halfway).",
+      "default": 20,
+      "required": false
+    }
+  }
+}
