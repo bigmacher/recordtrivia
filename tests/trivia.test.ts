@@ -120,3 +120,11 @@ test('keeps a Wikipedia summary only when it is the right album', async () => {
     content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Rumour' } },
   })).toBeUndefined()
 })
+
+test('/trivia prints the card in the chat, then the answer', async $ => {
+  const shown = await $.command.run({ command: 'trivia', args: '' })
+  expect(shown?.text).toContain('Q:')
+  expect(shown?.text).toContain('/trivia answer')
+  const answered = await $.command.run({ command: 'trivia', args: 'answer' })
+  expect(answered?.text).toContain('/trivia next')
+})

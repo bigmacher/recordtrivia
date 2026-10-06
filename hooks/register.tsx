@@ -149,6 +149,26 @@ async function syncCollection($: EngineInterface, settings: Settings) {
   void prepareAt($, settings, 1)
 }
 
+function cardText(card: Trivia, revealed: boolean, note?: WikiNote): string {
+  const lines = [`💿 ${card.album}${card.artist ? ` — ${card.artist}` : ''}${card.year ? ` (${card.year})` : ''}`]
+  if (card.question) lines.push('', `Q: ${card.question}`)
+  card.choices?.forEach((choice, i) => {
+    const mark = revealed && choice === card.answer ? ' ✅' : ''
+    lines.push(`   ${String.fromCharCode(65 + i)}. ${choice}${mark}`)
+  })
+  if (revealed) {
+    if (card.question && !card.choices) lines.push(`A: ${card.answer}`)
+    if (card.fact) lines.push('', `♪ ${card.fact}`)
+    if (note) lines.push('', note.extract, note.url)
+    if (card.url) lines.push(card.url)
+    lines.push('', 'Type /trivia next for another record.')
+  } else {
+    lines.push('', 'Type /trivia answer to reveal it, or /trivia next to skip.')
+  }
+
+  return lines.join('\n')
+}
+
 export const register: Register = (on, options) => {
   const settings: Settings = {
     username: String(options.discogsUsername ?? '').trim(),
@@ -160,7 +180,9 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'trivia',
-      description: 'Open the record trivia pane',
+      description: 'Show a record trivia card (answer, next, pane)',
+      argumentHint: '[answer|next|pane]',
+      immediate: true,
     })
     const now = await $.clock.now()
     await update($, index, () => now % 1000)
@@ -191,10 +213,19 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'trivia' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Record trivia' })
+  // Prints the card into the chat, so it reads the same on a phone as in a terminal.
+  on('command.run', { command: 'trivia' }, async ($, e) => {
+    const action = e.args.trim().toLowerCase()
+    if (action === 'pane') {
+      await $.ui.open({ id: PANE, title: 'Record trivia' })
+      return { text: 'Record trivia pane opened.' }
+    }
+    if (action === 'next') await nextCard($, settings)
+    if (action === 'answer' || action === 'reveal') await update($, isRevealed, () => true)
+    const { card } = await cardAt($, await read($, index))
+    const note = (await read($, wiki))[wikiKey(card)]
 
-    return { text: 'Record trivia pane opened.' }
+    return { text: cardText(card, await read($, isRevealed), note ?? undefined) }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
