@@ -45,6 +45,12 @@ export function isRightGuess(card: Trivia, rawGuess: string): boolean {
   if (!card.answer) return false
   const trimmed = rawGuess.trim()
 
+  // A true-or-false card takes yes/no and t/f too.
+  if (card.choices?.length === 2 && card.choices.includes('True')) {
+    if (/^(t|true|yes|y|yep|yeah|correct|right)[.!]*$/i.test(trimmed)) return card.answer === 'True'
+    if (/^(f|false|no|n|nope|wrong)[.!]*$/i.test(trimmed)) return card.answer === 'False'
+  }
+
   // A multiple-choice card takes its letter too.
   const letter = /^([a-d])[.)]?$/i.exec(trimmed)
   if (card.choices && letter) {

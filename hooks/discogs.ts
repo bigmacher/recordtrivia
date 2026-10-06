@@ -45,7 +45,7 @@ function formatOf(info: BasicInformation): string {
   return [format?.name, ...(format?.descriptions ?? [])].filter(Boolean).join(', ')
 }
 
-type Ask = { question: string; answer: string }
+type Ask = { question: string; answer: string; kind: string; wrong?: string[] }
 
 function pick<T>(choices: T[], seed: number): T | undefined {
   return choices.length ? choices[Math.abs(seed) % choices.length] : undefined
@@ -62,13 +62,13 @@ export function cardFromCollection(info: BasicInformation, dateAdded?: string): 
   const added = dateAdded?.slice(0, 10)
 
   const asks: Ask[] = []
-  if (year) asks.push({ question: `What year did ${artist} release "${album}"?`, answer: String(year) })
-  if (labelName) asks.push({ question: `Which label put out "${album}"?`, answer: label?.catno ? `${labelName} (${label.catno})` : labelName })
-  if (styles.length) asks.push({ question: `How is "${album}" filed on Discogs (genre/style)?`, answer: styles.join(', ') })
-  if (added) asks.push({ question: `When did "${album}" join your collection?`, answer: added })
+  if (year) asks.push({ question: `What year did ${artist} release "${album}"?`, answer: String(year), kind: 'year' })
+  if (labelName) asks.push({ question: `Which label put out "${album}"?`, answer: labelName, kind: 'label' })
+  if (styles.length) asks.push({ question: `How is "${album}" filed on Discogs (genre/style)?`, answer: styles.slice(0, 2).join(', '), kind: 'style' })
+  if (added) asks.push({ question: `When did "${album}" join your collection?`, answer: added, kind: 'added' })
   const ask = pick(asks, info.id)
 
-  const facts = [format && `Your copy: ${format}`, labelName && `on ${labelName}`].filter(Boolean)
+  const facts = [format && `Your copy: ${format}`, labelName && `on ${labelName}${label?.catno ? ` (${label.catno})` : ''}`].filter(Boolean)
 
   return {
     album,
@@ -77,6 +77,8 @@ export function cardFromCollection(info: BasicInformation, dateAdded?: string): 
     fact: facts.join(' ') || undefined,
     question: ask?.question,
     answer: ask?.answer,
+    kind: ask?.kind,
+    isYearHidden: ask?.kind === 'year',
     source: 'discogs',
     releaseId: info.id,
     url: `https://www.discogs.com/release/${info.id}`,
@@ -100,9 +102,14 @@ export function enrichCard(card: Trivia, release: Release): Trivia {
   const want = release.community?.want
 
   const asks: Ask[] = []
-  if (tracks[0]?.title) asks.push({ question: `What's the opening track on "${card.album}"?`, answer: tracks[0].title })
-  if (tracks.length > 1) asks.push({ question: `How many tracks are on "${card.album}"?`, answer: String(tracks.length) })
-  if (have) asks.push({ question: `How many Discogs users have "${card.album}" (this pressing) in their collection?`, answer: have.toLocaleString('en-US') })
+  if (tracks[0]?.title) asks.push({
+    question: `What's the opening track on "${card.album}"?`,
+    answer: tracks[0].title,
+    kind: 'track',
+    wrong: tracks.slice(1).map(t => t.title!).filter(t => t !== tracks[0]!.title).slice(0, 3),
+  })
+  if (tracks.length > 1) asks.push({ question: `How many tracks are on "${card.album}"?`, answer: String(tracks.length), kind: 'count' })
+  if (have) asks.push({ question: `How many Discogs users have "${card.album}" (this pressing) in their collection?`, answer: have.toLocaleString('en-US'), kind: 'have' })
   const ask = pick(asks, (card.releaseId ?? 0) >> 1)
 
   const facts = [
@@ -115,6 +122,9 @@ export function enrichCard(card: Trivia, release: Release): Trivia {
     ...card,
     question: ask?.question ?? card.question,
     answer: ask?.answer ?? card.answer,
+    kind: ask ? ask.kind : card.kind,
+    wrong: ask ? ask.wrong : card.wrong,
+    isYearHidden: ask ? false : card.isYearHidden,
     fact: facts.join(' · ') || card.fact,
     isEnriched: true,
   }

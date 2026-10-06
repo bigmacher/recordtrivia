@@ -4,6 +4,7 @@ import type { EngineInterface, Register, RenderElement, RenderInput } from 'clau
 import type { Score, Trivia, WikiNote } from '../types'
 import { DECK } from './deck'
 import { isRightGuess } from './guess'
+import { addDistractors, varyCard } from './variety'
 import { cardsFromPage, enrichCard } from './discogs'
 import type { CollectionPage, Release } from './discogs'
 import { COVER_PX, MAX_COVER_BASE64, coverLineOf, coverSvg, wikimediaThumb, withoutCoverLine } from './covers'
@@ -53,7 +54,9 @@ async function deckOf($: EngineInterface): Promise<Trivia[]> {
 async function cardAt($: EngineInterface, position: number): Promise<{ card: Trivia; total: number }> {
   const deck = await deckOf($)
 
-  return { card: deck[position % deck.length] ?? DECK[0]!, total: deck.length }
+  const card = deck[position % deck.length] ?? DECK[0]!
+
+  return { card: varyCard(card, deck, position), total: deck.length }
 }
 
 async function lookUpWikipedia($: EngineInterface, card: Trivia) {
@@ -148,7 +151,7 @@ async function syncCollection($: EngineInterface, settings: Settings) {
     .map((card, i) => ({ card, key: ((card.releaseId ?? i) * 2654435761 + seed) % 4294967296 }))
     .sort((a, b) => a.key - b.key)
     .map(x => x.card)
-  await update($, fromDiscogs, () => shuffled)
+  await update($, fromDiscogs, () => addDistractors(shuffled))
   await update($, index, () => 0)
   await update($, discogsStatus, () => `${shuffled.length} records from ${settings.username}`)
   await prepareAt($, settings, 0)
@@ -164,6 +167,11 @@ function isCoverShown(card: Trivia, revealed: boolean): boolean {
   return revealed || !/cover|sleeve|artwork/i.test(card.question ?? '')
 }
 
+// A question about the year keeps the year out of sight until the answer.
+function yearOf(card: Trivia, revealed: boolean): number | undefined {
+  return card.year && (revealed || !card.isYearHidden) ? card.year : undefined
+}
+
 function scoreLine(s: Score): string {
   const streak = s.streak >= 3 ? ` · 🔥 ${s.streak} in a row` : ''
   return `🏆 Score: ${s.points} (${s.right} right, ${s.wrong} wrong)${streak}`
@@ -171,7 +179,7 @@ function scoreLine(s: Score): string {
 
 function cardText(card: Trivia, revealed: boolean, note?: WikiNote, verdict?: string): string {
   const lines = verdict ? [verdict, ''] : []
-  lines.push(`💿 ${card.album}${card.artist ? ` — ${card.artist}` : ''}${card.year ? ` (${card.year})` : ''}`)
+  lines.push(`💿 ${card.album}${card.artist ? ` — ${card.artist}` : ''}${yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}`)
   const cover = coverOf(card, note)
   if (cover && isCoverShown(card, revealed)) lines.push(`🖼️ Cover: ${cover}`)
   if (card.question) lines.push('', `Q: ${card.question}`)
@@ -186,7 +194,8 @@ function cardText(card: Trivia, revealed: boolean, note?: WikiNote, verdict?: st
     if (card.url) lines.push(card.url)
     lines.push('', 'Next? Reply yes.')
   } else {
-    lines.push('', 'Reply with your guess, "answer" to reveal it, or "next" to skip.')
+    const how = card.choices?.length === 2 ? 'Reply true or false' : card.choices ? 'Reply with a letter' : 'Reply with your guess'
+    lines.push('', `${how}, "answer" to reveal it, or "next" to skip.`)
   }
 
   return lines.join('\n')
@@ -415,7 +424,7 @@ export const register: Register = (on, options) => {
         <Text>
           <Text color="magenta">◉ </Text>
           <Text bold>{card.album}</Text>
-          {card.artist ? <Text dimColor> — {card.artist}{card.year ? ` (${card.year})` : ''}</Text> : null}
+          {card.artist ? <Text dimColor> — {card.artist}{yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}</Text> : null}
         </Text>
         {card.question ? (
           <Text>
@@ -457,7 +466,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column">
             <Text bold>{card.album}</Text>
             <Text>{card.artist}</Text>
-            {card.year ? <Text dimColor>{String(card.year)}</Text> : null}
+            {yearOf(card, revealed) ? <Text dimColor>{String(yearOf(card, revealed))}</Text> : null}
             {card.url ? <Link href={card.url} label="View on Discogs" /> : null}
             {note ? <Link href={note.url} label="Read on Wikipedia" /> : null}
             {coverOf(card, note) && isCoverShown(card, revealed) ? <Link href={coverOf(card, note)!} label="See the cover" /> : null}

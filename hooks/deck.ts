@@ -1,5 +1,37 @@
 import type { Trivia } from '../types'
 
+// Wrong answers for each card, so it can also be played as multiple choice.
+const WRONG: Record<string, string[]> = {
+  "Paul McCartney": ["John Lennon", "George Harrison", "Ringo Starr"],
+  "Don't Stop": ["Go Your Own Way", "Dreams", "The Chain"],
+  "Hipgnosis (Storm Thorgerson)": ["Andy Warhol", "Roger Dean", "Peter Blake"],
+  "Quincy Jones": ["Nile Rodgers", "Rick Rubin", "Babyface"],
+  "Bill Evans": ["Herbie Hancock", "Red Garland", "Thelonious Monk"],
+  "A dollar bill on a fishhook": ["A rubber duck", "A goldfish", "A vinyl record"],
+  "Goats": ["Horses", "Dogs", "Penguins"],
+  "Stairway to Heaven": ["Black Dog", "Rock and Roll", "When the Levee Breaks"],
+  "A motorcycle": ["A white horse", "A convertible", "A bicycle"],
+  "Clarence Clemons": ["Steven Van Zandt", "Max Weinberg", "Patti Scialfa"],
+  "Smashing his bass": ["Jumping off a speaker", "Lighting a guitar on fire", "Diving into the crowd"],
+  "The Appalachian dulcimer": ["The banjo", "The ukulele", "The harmonica"],
+  "Brian Johnson": ["Dave Evans", "Axl Rose", "Ian Gillan"],
+  "The Mac's SimpleText (Fred)": ["Stephen Hawking", "Siri", "A BBC newsreader"],
+  "Andy Warhol": ["Lou Reed", "Roy Lichtenstein", "Keith Haring"],
+  "Joe Walsh": ["Don Felder", "Timothy B. Schmit", "Bernie Leadon"],
+  "His brother Frankie": ["His father", "His wife Anna", "Tammi Terrell"],
+  "Her cat, Telemachus": ["Her dog, Sam", "A guitar", "A stack of records"],
+  "Robert Williams": ["H.R. Giger", "Frank Frazetta", "Raymond Pettibon"],
+  "Ladysmith Black Mambazo": ["Soweto Gospel Choir", "The Mahotella Queens", "Los Lobos"],
+  "Where the Streets Have No Name": ["With or Without You", "I Still Haven't Found What I'm Looking For", "Bullet the Blue Sky"],
+  "Heddon Street": ["Carnaby Street", "Abbey Road", "Denmark Street"],
+  "Happy": ["Tumbling Dice", "Rocks Off", "Sweet Virginia"],
+  "Jack White": ["Jimmy Page", "Dave Grohl", "Josh Homme"],
+  "Alright": ["King Kunta", "i", "These Walls"],
+  "Pharrell Williams": ["Julian Casablancas", "Todd Edwards", "Panda Bear"],
+  "Isn't She Lovely": ["Sir Duke", "I Wish", "As"],
+  "Max Martin": ["Jack Antonoff", "Ryan Tedder", "Mark Ronson"],
+}
+
 const card = (
   album: string,
   artist: string,
@@ -7,7 +39,7 @@ const card = (
   fact: string,
   question: string,
   answer: string,
-): Trivia => ({ album, artist, year, fact, question, answer, source: 'deck' })
+): Trivia => ({ album, artist, year, fact, question, answer, wrong: WRONG[answer], source: 'deck' })
 
 export const DECK: Trivia[] = [
   card('Abbey Road', 'The Beatles', 1969,

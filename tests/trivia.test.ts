@@ -4,6 +4,7 @@ import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
 import * as covers from '../hooks/covers'
 import * as deckModule from '../hooks/deck'
 import { isRightGuess } from '../hooks/guess'
+import { addDistractors, formatFor, varyCard } from '../hooks/variety'
 import { cardsFromOpenTdb, noteFromSummary, wikiCandidates } from '../hooks/web'
 
 const SCROLL = { offset: 0, bodyRows: 10 }
@@ -32,7 +33,7 @@ test('builds a trivia card from a Discogs collection item', async () => {
   expect(card?.artist).toBe('Rick Astley')
   expect(card?.url).toBe('https://www.discogs.com/release/249504')
   expect(card?.coverUrl).toBe('https://i.discogs.com/cover.jpg')
-  expect(card?.fact).toBe('Your copy: Vinyl, 7", Single, 45 RPM on RCA')
+  expect(card?.fact).toBe('Your copy: Vinyl, 7", Single, 45 RPM on RCA (PB 41447)')
   expect(typeof card?.question).toBe('string')
   expect(typeof card?.answer).toBe('string')
 })
@@ -83,11 +84,11 @@ test('pane reveals the answer and moves to the next record', async $ => {
       plugin: 'record-trivia', surface, component: 'Pane', requestId: 'record-trivia',
       props: { title: 'Record trivia', isFocused: true, bodyColumns: 70, placement: 'dock', scroll: SCROLL, view: {} },
     })
-    expect(await ui.find({ type: 'Text', text: /^A:/ })).toBeUndefined()
+    expect(await ui.find({ key: 'reveal' })).toBeDefined()
     await ui.press({ key: 'reveal' })
-    expect(await ui.find({ type: 'Text', text: /^A:/ })).toBeDefined()
+    expect(await ui.find({ key: 'reveal' })).toBeUndefined()
     await ui.press({ key: 'next' })
-    expect(await ui.find({ type: 'Text', text: /^A:/ })).toBeUndefined()
+    expect(await ui.find({ key: 'reveal' })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -196,8 +197,35 @@ test('a right guess earns points', async ($, on) => {
   // Look up the shown card's answer in the deck and guess it.
   const shown = await $.command.run({ command: 'trivia', args: '' })
   const { DECK } = deckModule
-  const card = DECK.find(c => shown?.text.includes(c.album))
-  const right = await $.command.run({ command: 'answer', args: card?.answer ?? '' })
+  const position = DECK.findIndex(c => shown?.text.includes(c.album))
+  const card = varyCard(DECK[position]!, DECK, position)
+  const right = await $.command.run({ command: 'answer', args: card.answer ?? '' })
   expect(right?.text).toContain('✅ Right! +10')
   expect(right?.text).toContain('Score: 10 (1 right, 0 wrong)')
+})
+
+test('cards play as typed, multiple choice or true/false', async () => {
+  const deck = deckModule.DECK
+  const formats = new Set<string>()
+  for (let position = 0; position < 60; position++) {
+    const card = varyCard(deck[position % deck.length]!, deck, position)
+    formats.add(card.choices?.length === 2 ? 'truefalse' : card.choices ? 'choice' : 'typed')
+    expect(card.choices ? card.choices.includes(card.answer!) : true).toBe(true)
+  }
+  expect([...formats].sort()).toEqual(['choice', 'truefalse', 'typed'])
+  expect(formatFor({ album: 'x', artist: 'y', answer: 'z', source: 'deck' }, 9)).toBe('typed')
+})
+
+test('true/false takes yes and no', async () => {
+  const card = { album: 'x', artist: 'y', answer: 'False', choices: ['True', 'False'], source: 'deck' as const }
+  expect(isRightGuess(card, 'no')).toBe(true)
+  expect(isRightGuess(card, 'yes')).toBe(false)
+  expect(isRightGuess(card, 'f')).toBe(true)
+})
+
+test('collection questions borrow wrong answers from other records', async () => {
+  const label = (answer: string) => ({ album: answer, artist: 'y', answer, kind: 'label', source: 'discogs' as const })
+  const [first] = addDistractors([label('RCA'), label('Columbia'), label('Motown'), label('Stax')])
+  expect(first?.wrong?.length).toBe(3)
+  expect(first?.wrong).not.toContain('RCA')
 })

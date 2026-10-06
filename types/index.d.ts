@@ -6,6 +6,12 @@ export type Trivia = {
   question?: string
   answer?: string
   choices?: string[]
+  // Wrong answers that let the card play as multiple choice.
+  wrong?: string[]
+  // What the question asks about (year, label, style, added, track, count, have).
+  kind?: string
+  // The question is about the year, so it stays hidden until the answer.
+  isYearHidden?: boolean
   source: 'deck' | 'discogs' | 'web'
   releaseId?: number
   url?: string
