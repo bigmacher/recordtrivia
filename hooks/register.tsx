@@ -161,9 +161,9 @@ function cardText(card: Trivia, revealed: boolean, note?: WikiNote): string {
     if (card.fact) lines.push('', `♪ ${card.fact}`)
     if (note) lines.push('', note.extract, note.url)
     if (card.url) lines.push(card.url)
-    lines.push('', 'Type /trivia next for another record.')
+    lines.push('', 'Type /next for another record.')
   } else {
-    lines.push('', 'Type /trivia answer to reveal it, or /trivia next to skip.')
+    lines.push('', 'Type /answer to reveal it, or /next to skip.')
   }
 
   return lines.join('\n')
@@ -182,6 +182,16 @@ export const register: Register = (on, options) => {
       name: 'trivia',
       description: 'Show a record trivia card (answer, next, pane)',
       argumentHint: '[answer|next|pane]',
+      immediate: true,
+    })
+    await $.command.register({
+      name: 'answer',
+      description: 'Reveal the answer to the current trivia card',
+      immediate: true,
+    })
+    await $.command.register({
+      name: 'next',
+      description: 'Show the next record trivia card',
       immediate: true,
     })
     const now = await $.clock.now()
@@ -226,6 +236,21 @@ export const register: Register = (on, options) => {
     const note = (await read($, wiki))[wikiKey(card)]
 
     return { text: cardText(card, await read($, isRevealed), note ?? undefined) }
+  })
+
+  on('command.run', { command: 'answer' }, async $ => {
+    await update($, isRevealed, () => true)
+    const { card } = await cardAt($, await read($, index))
+    const note = (await read($, wiki))[wikiKey(card)]
+
+    return { text: cardText(card, true, note ?? undefined) }
+  })
+
+  on('command.run', { command: 'next' }, async $ => {
+    await nextCard($, settings)
+    const { card } = await cardAt($, await read($, index))
+
+    return { text: cardText(card, false) }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

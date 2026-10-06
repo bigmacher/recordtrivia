@@ -124,7 +124,9 @@ test('keeps a Wikipedia summary only when it is the right album', async () => {
 test('/trivia prints the card in the chat, then the answer', async $ => {
   const shown = await $.command.run({ command: 'trivia', args: '' })
   expect(shown?.text).toContain('Q:')
-  expect(shown?.text).toContain('/trivia answer')
-  const answered = await $.command.run({ command: 'trivia', args: 'answer' })
-  expect(answered?.text).toContain('/trivia next')
+  expect(shown?.text).toContain('/answer')
+  const answered = await $.command.run({ command: 'answer', args: '' })
+  expect(answered?.text).toContain('/next')
+  const next = await $.command.run({ command: 'next', args: '' })
+  expect(next?.text).toContain('/answer')
 })
