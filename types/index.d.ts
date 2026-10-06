@@ -14,6 +14,8 @@ export type Trivia = {
   isEnriched?: boolean
 }
 
+export type Score = { points: number; right: number; wrong: number; streak: number }
+
 export type WikiNote = { extract: string; url: string; imageUrl?: string }
 
 declare module 'claude-code' {
@@ -27,6 +29,7 @@ declare module 'claude-code' {
       covers: Record<string, string | null>
       discogsStatus: string
       awaiting: 'answer' | 'next' | 'none'
+      score: Score
     }
   }
 }

@@ -1,7 +1,9 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
 import * as covers from '../hooks/covers'
+import * as deckModule from '../hooks/deck'
+import { isRightGuess } from '../hooks/guess'
 import { cardsFromOpenTdb, noteFromSummary, wikiCandidates } from '../hooks/web'
 
 const SCROLL = { offset: 0, bodyRows: 10 }
@@ -133,7 +135,7 @@ test('/trivia prints the card in the chat, then the answer', async $ => {
   const answered = await $.command.run({ command: 'answer', args: '' })
   expect(answered?.text).toContain('Next? Reply yes.')
   const next = await $.command.run({ command: 'next', args: '' })
-  expect(next?.text).toContain('"next" to skip')
+  expect(next?.text).toContain('Reply with your guess')
 })
 
 test('wraps a downloaded cover in an SVG the apps can draw', async () => {
@@ -155,5 +157,47 @@ test('"yes" after an answer is taken as next; other prompts pass through', async
   await $.command.run({ command: 'next', args: '' })
   expect(await $.prompt.submit({ text: "I don't know", wait: false })).toEqual({ drop: '▶ The answer' })
   await $.command.run({ command: 'next', args: '' })
-  expect((await $.prompt.submit({ text: 'please fix the failing build', wait: false }))?.text).toBe('please fix the failing build')
+  expect(await $.prompt.submit({ text: 'Motorcycle', wait: false })).toEqual({ drop: '▶ Your guess: Motorcycle' })
+  await $.command.run({ command: 'next', args: '' })
+  expect((await $.prompt.submit({ text: 'can you fix the failing build?', wait: false }))?.text).toBe('can you fix the failing build?')
+})
+
+test('guesses match forgivingly', async () => {
+  const card = (answer: string, choices?: string[]) => ({ album: 'x', artist: 'y', answer, choices, source: 'deck' as const })
+  expect(isRightGuess(card('Paul McCartney'), 'mccartney')).toBe(true)
+  expect(isRightGuess(card('Paul McCartney'), 'Paul McCartny')).toBe(true)
+  expect(isRightGuess(card('Paul McCartney'), 'John Lennon')).toBe(false)
+  expect(isRightGuess(card('A motorcycle'), 'Motorcycle')).toBe(true)
+  expect(isRightGuess(card('Hipgnosis (Storm Thorgerson)'), 'storm thorgerson')).toBe(true)
+  expect(isRightGuess(card('1987'), '1987')).toBe(true)
+  expect(isRightGuess(card('1987'), '1986')).toBe(false)
+  expect(isRightGuess(card('4,136'), '4136')).toBe(true)
+  expect(isRightGuess(card('Matt Bellamy', ['Dominic Howard', 'Matt Bellamy', 'Thom Yorke']), 'b')).toBe(true)
+  expect(isRightGuess(card('Matt Bellamy', ['Dominic Howard', 'Matt Bellamy', 'Thom Yorke']), 'C')).toBe(false)
+  expect(isRightGuess(card("Don't Stop"), 'dont stop')).toBe(true)
+})
+
+test('a right guess scores +10, a wrong one -5, and /score shows the total', async ($, on) => {
+  mock.store(on)
+  await $.command.run({ command: 'score', args: 'reset' })
+  await $.command.run({ command: 'trivia', args: '' })
+  const wrong = await $.command.run({ command: 'answer', args: 'definitely not this' })
+  expect(wrong?.text).toContain('❌')
+  expect(wrong?.text).toContain('Score: -5 (0 right, 1 wrong)')
+  // Answering the same card again scores nothing.
+  const again = await $.command.run({ command: 'answer', args: 'still wrong' })
+  expect(again?.text).not.toContain('❌')
+  expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: -5')
+})
+
+test('a right guess earns points', async ($, on) => {
+  mock.store(on)
+  await $.command.run({ command: 'score', args: 'reset' })
+  // Look up the shown card's answer in the deck and guess it.
+  const shown = await $.command.run({ command: 'trivia', args: '' })
+  const { DECK } = deckModule
+  const card = DECK.find(c => shown?.text.includes(c.album))
+  const right = await $.command.run({ command: 'answer', args: card?.answer ?? '' })
+  expect(right?.text).toContain('✅ Right! +10')
+  expect(right?.text).toContain('Score: 10 (1 right, 0 wrong)')
 })

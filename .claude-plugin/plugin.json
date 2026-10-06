@@ -34,6 +34,20 @@
       "description": "How long each trivia card shows before the next one (the answer is revealed halfway).",
       "default": 20,
       "required": false
+    },
+    "pointsRight": {
+      "type": "number",
+      "title": "Points for a right answer",
+      "description": "Added to your score for each right guess.",
+      "default": 10,
+      "required": false
+    },
+    "pointsWrong": {
+      "type": "number",
+      "title": "Points off for a wrong answer",
+      "description": "Taken off your score for each wrong guess.",
+      "default": 5,
+      "required": false
     }
   }
 }
