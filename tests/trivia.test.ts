@@ -1,27 +1,51 @@
 import { expect, test } from 'claude-code/testing'
 
-import { parseMessage, parseMessages } from '../hooks/discord'
+import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
 
 const SCROLL = { offset: 0, bodyRows: 10 }
 
-test('parses !trivia album facts from Discord', async () => {
-  expect(parseMessage('!trivia Abbey Road | The Beatles | 1969 | Shot in ten minutes')).toEqual({
-    album: 'Abbey Road',
-    artist: 'The Beatles',
-    year: 1969,
-    fact: 'Shot in ten minutes',
-    source: 'discord',
-  })
+const PAGE = {
+  pagination: { page: 1, pages: 1 },
+  releases: [{
+    date_added: '2024-03-02T10:00:00-08:00',
+    basic_information: {
+      id: 249504,
+      title: 'Never Gonna Give You Up',
+      year: 1987,
+      artists: [{ name: 'Rick Astley' }],
+      labels: [{ name: 'RCA', catno: 'PB 41447' }],
+      formats: [{ name: 'Vinyl', descriptions: ['7"', 'Single', '45 RPM'] }],
+      genres: ['Electronic', 'Pop'],
+      styles: ['Synth-pop'],
+    },
+  }],
+}
+
+test('builds a trivia card from a Discogs collection item', async () => {
+  const [card] = cardsFromPage(PAGE)
+  expect(card?.album).toBe('Never Gonna Give You Up')
+  expect(card?.artist).toBe('Rick Astley')
+  expect(card?.url).toBe('https://www.discogs.com/release/249504')
+  expect(card?.fact).toBe('Your copy: Vinyl, 7", Single, 45 RPM on RCA')
+  expect(typeof card?.question).toBe('string')
+  expect(typeof card?.answer).toBe('string')
 })
 
-test('parses !q quiz questions and ignores chatter', async () => {
-  const cards = parseMessages([
-    { content: 'anyone up for trivia?' },
-    { content: '!q Who sang Purple Rain? | Prince' },
-    { content: '!q missing answer' },
-  ])
-  expect(cards.length).toBe(1)
-  expect(cards[0]?.answer).toBe('Prince')
+test('strips Discogs name disambiguation', async () => {
+  expect(cleanName('Prince (2)')).toBe('Prince')
+  expect(cleanName('The Clash*')).toBe('The Clash')
+})
+
+test('enriches a card with tracklist and community numbers', async () => {
+  const [card] = cardsFromPage(PAGE)
+  const rich = enrichCard(card!, {
+    id: 249504,
+    tracklist: [{ title: 'Never Gonna Give You Up', type_: 'track' }, { title: 'Never Gonna Give You Up (Instrumental)', type_: 'track' }],
+    community: { have: 4136, want: 588 },
+    lowest_price: 0.66,
+  })
+  expect(rich.isEnriched).toBe(true)
+  expect(rich.fact).toContain('4,136 have it, 588 want it')
 })
 
 test('band shows a record only while Claude works', async ($, on) => {

@@ -3,55 +3,106 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Trivia } from '../types'
 import { DECK } from './deck'
-import { parseMessages } from './discord'
-import type { DiscordMessage } from './discord'
+import { cardsFromPage, enrichCard } from './discogs'
+import type { CollectionPage, Release } from './discogs'
 
 const PANE = 'record-trivia'
-const POLL_MS = 60_000
+const API = 'https://api.discogs.com'
+const SYNC_MS = 30 * 60_000
+const MAX_PAGES = 10
 
 const index = atom({ plugin: 'record-trivia', key: 'index' } as const, 0)
 const isRevealed = atom({ plugin: 'record-trivia', key: 'isRevealed' } as const, false)
-const fromDiscord = atom({ plugin: 'record-trivia', key: 'fromDiscord' } as const, [])
-const discordStatus = atom({ plugin: 'record-trivia', key: 'discordStatus' } as const, 'off')
+const fromDiscogs = atom({ plugin: 'record-trivia', key: 'fromDiscogs' } as const, [])
+const discogsStatus = atom({ plugin: 'record-trivia', key: 'discogsStatus' } as const, 'not set up')
 
-// Discord cards first so fresh community trivia shows up soon after it is posted.
+type Discogs = { username: string; token: string }
+
+function headers(discogs: Discogs): Record<string, string> {
+  const base = { 'User-Agent': 'RecordTriviaClaudeMod/0.1 +https://github.com/bigmacher/recordtrivia' }
+  return discogs.token ? { ...base, Authorization: `Discogs token=${discogs.token}` } : base
+}
+
+// Your collection when Discogs is set up, the built-in crate otherwise.
+async function deckOf($: EngineInterface): Promise<Trivia[]> {
+  const mine = await read($, fromDiscogs)
+  return mine.length ? mine : DECK
+}
+
 async function currentCard($: EngineInterface): Promise<{ card: Trivia; total: number }> {
-  const deck = [...(await read($, fromDiscord)), ...DECK]
+  const deck = await deckOf($)
   const i = (await read($, index)) % deck.length
 
   return { card: deck[i] ?? DECK[0]!, total: deck.length }
 }
 
-async function nextCard($: EngineInterface) {
-  await update($, isRevealed, () => false)
-  await update($, index, i => i + 1)
+// Fetches the full release for a card before it shows, for tracklist and community questions.
+async function enrichAt($: EngineInterface, discogs: Discogs, position: number) {
+  const deck = await read($, fromDiscogs)
+  if (!deck.length) return
+  const card = deck[position % deck.length]
+  if (!card?.releaseId || card.isEnriched) return
+  try {
+    const res = await $.http.fetch(`${API}/releases/${card.releaseId}`, { headers: headers(discogs) })
+    if (!res.ok) return
+    const rich = enrichCard(card, JSON.parse(res.text) as Release)
+    await update($, fromDiscogs, list => list.map(c => (c.releaseId === rich.releaseId ? rich : c)))
+  } catch {
+    // Leave the card as the collection described it.
+  }
 }
 
-async function pullDiscord($: EngineInterface, token: string, channelId: string) {
-  if (!token || !channelId) {
-    await update($, discordStatus, () => 'off')
+async function nextCard($: EngineInterface, discogs: Discogs) {
+  await update($, isRevealed, () => false)
+  await update($, index, i => i + 1)
+  void enrichAt($, discogs, (await read($, index)) + 1)
+}
+
+async function syncCollection($: EngineInterface, discogs: Discogs) {
+  if (!discogs.username) {
+    await update($, discogsStatus, () => 'not set up')
     return
   }
+  await update($, discogsStatus, () => 'syncing…')
+  const user = encodeURIComponent(discogs.username)
+  const cards: Trivia[] = []
   try {
-    const res = await $.http.fetch(
-      `https://discord.com/api/v10/channels/${encodeURIComponent(channelId)}/messages?limit=100`,
-      { headers: { Authorization: `Bot ${token}`, 'User-Agent': 'record-trivia (claude-code mod, 0.1.0)' } },
-    )
-    if (!res.ok) {
-      await update($, discordStatus, () => `error ${res.status}`)
-      return
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const res = await $.http.fetch(
+        `${API}/users/${user}/collection/folders/0/releases?per_page=100&page=${page}&sort=added&sort_order=desc`,
+        { headers: headers(discogs) },
+      )
+      if (!res.ok) {
+        const why = res.status === 401 || res.status === 403 ? 'collection is private, add a token' : res.status === 404 ? 'user not found' : `error ${res.status}`
+        await update($, discogsStatus, () => why)
+        return
+      }
+      const body = JSON.parse(res.text) as CollectionPage
+      cards.push(...cardsFromPage(body))
+      if (page >= (body.pagination?.pages ?? 1)) break
     }
-    const cards = parseMessages(JSON.parse(res.text) as DiscordMessage[])
-    await update($, fromDiscord, () => cards)
-    await update($, discordStatus, () => `${cards.length} from Discord`)
   } catch {
-    await update($, discordStatus, () => 'unreachable')
+    await update($, discogsStatus, () => 'unreachable')
+    return
   }
+  // Shuffle so each session digs through a different part of the crate.
+  const seed = await $.clock.now()
+  const shuffled = cards
+    .map((card, i) => ({ card, key: ((card.releaseId ?? i) * 2654435761 + seed) % 4294967296 }))
+    .sort((a, b) => a.key - b.key)
+    .map(x => x.card)
+  await update($, fromDiscogs, () => shuffled)
+  await update($, index, () => 0)
+  await update($, discogsStatus, () => `${shuffled.length} records from ${discogs.username}`)
+  await enrichAt($, discogs, 0)
+  void enrichAt($, discogs, 1)
 }
 
 export const register: Register = (on, options) => {
-  const token = String(options.discordBotToken ?? '').trim()
-  const channelId = String(options.discordChannelId ?? '').trim()
+  const discogs: Discogs = {
+    username: String(options.discogsUsername ?? '').trim(),
+    token: String(options.discogsToken ?? '').trim(),
+  }
   const halfMs = Math.max(5, Number(options.rotateSeconds ?? 20)) * 500
 
   on('session.start', async ($, e, next) => {
@@ -59,15 +110,14 @@ export const register: Register = (on, options) => {
       name: 'trivia',
       description: 'Open the record trivia pane',
     })
-    // Start somewhere different each session.
     const now = await $.clock.now()
     await update($, index, () => now % 1000)
-    void pullDiscord($, token, channelId)
-    $.clock.every(POLL_MS, () => void pullDiscord($, token, channelId))
+    void syncCollection($, discogs)
+    $.clock.every(SYNC_MS, () => void syncCollection($, discogs))
     // Flip the card to its answer, then advance, on a steady beat.
     $.clock.every(halfMs, () => {
       void (async () => {
-        if (await read($, isRevealed)) await nextCard($)
+        if (await read($, isRevealed)) await nextCard($, discogs)
         else await update($, isRevealed, () => true)
       })()
     })
@@ -77,7 +127,7 @@ export const register: Register = (on, options) => {
 
   // A fresh card each time Claude starts working.
   on('turn.start', async ($, e, next) => {
-    await nextCard($)
+    await nextCard($, discogs)
 
     return next(e)
   })
@@ -114,10 +164,10 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text, Button, Link } = $.ui.resolve(e)
     const { card, total } = await currentCard($)
     const revealed = await read($, isRevealed)
-    const status = await read($, discordStatus)
+    const status = await read($, discogsStatus)
     const label = card.album.slice(0, 9).toUpperCase().padEnd(9)
 
     return (
@@ -136,9 +186,9 @@ export const register: Register = (on, options) => {
           </Box>
           <Box flexDirection="column">
             <Text bold>{card.album}</Text>
-            {card.artist ? <Text>{card.artist}</Text> : null}
+            <Text>{card.artist}</Text>
             {card.year ? <Text dimColor>{String(card.year)}</Text> : null}
-            <Text dimColor>{card.source === 'discord' ? 'from Discord' : 'from the crate'}</Text>
+            {card.url ? <Link href={card.url} label="View on Discogs" /> : <Text dimColor>from the crate</Text>}
           </Box>
         </Box>
         <Text> </Text>
@@ -156,10 +206,10 @@ export const register: Register = (on, options) => {
             <Button key="reveal" label="Reveal" hotkey="r" variant="primary"
               onPress={() => update($, isRevealed, () => true)} />
           ) : null}
-          <Button key="next" label="Next record" hotkey="n" onPress={() => nextCard($)} />
-          <Button key="sync" label="Sync Discord" hotkey="s" onPress={() => pullDiscord($, token, channelId)} />
+          <Button key="next" label="Next record" hotkey="n" onPress={() => nextCard($, discogs)} />
+          <Button key="sync" label="Sync Discogs" hotkey="s" onPress={() => syncCollection($, discogs)} />
         </Box>
-        <Text dimColor>{total} cards · Discord: {status}</Text>
+        <Text dimColor>{total} cards · Discogs: {status}</Text>
       </Box>
     )
   })

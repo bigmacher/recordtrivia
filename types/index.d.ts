@@ -5,7 +5,10 @@ export type Trivia = {
   fact?: string
   question?: string
   answer?: string
-  source: 'deck' | 'discord'
+  source: 'deck' | 'discogs'
+  releaseId?: number
+  url?: string
+  isEnriched?: boolean
 }
 
 declare module 'claude-code' {
@@ -13,8 +16,8 @@ declare module 'claude-code' {
     'record-trivia': {
       index: number
       isRevealed: boolean
-      fromDiscord: Trivia[]
-      discordStatus: string
+      fromDiscogs: Trivia[]
+      discogsStatus: string
     }
   }
 }

@@ -1,22 +1,24 @@
 {
   "name": "record-trivia",
   "version": "0.1.0",
-  "author": { "name": "bigmacher" },
-  "description": "Record & music trivia above the prompt while Claude works, with an optional feed from a Discord channel",
+  "author": {
+    "name": "bigmacher"
+  },
+  "description": "Record & music trivia above the prompt while Claude works, built from your Discogs collection",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "discordBotToken": {
+    "discogsUsername": {
       "type": "string",
-      "title": "Discord bot token",
-      "description": "Bot token used to read trivia from a Discord channel. Leave empty to use the built-in deck only.",
-      "sensitive": true,
+      "title": "Discogs username",
+      "description": "Whose collection to build trivia from. Leave empty to use the built-in deck only.",
+      "default": "",
       "required": false
     },
-    "discordChannelId": {
+    "discogsToken": {
       "type": "string",
-      "title": "Discord channel ID",
-      "description": "Channel to pull trivia from. Post lines like: !trivia Album | Artist | Year | Fact   or   !q Question | Answer",
-      "default": "",
+      "title": "Discogs personal access token",
+      "description": "Needed if your collection is private (Discogs > Settings > Developers > Generate new token).",
+      "sensitive": true,
       "required": false
     },
     "rotateSeconds": {
