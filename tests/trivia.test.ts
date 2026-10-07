@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
+import { appleCards, cleanAlbum, peersOf } from '../hooks/apple-quiz'
 import * as covers from '../hooks/covers'
 import * as deckModule from '../hooks/deck'
 import { matchesFilter, parseFilter } from '../hooks/filter'
@@ -382,4 +383,28 @@ test('/tune plays a preview and takes a guess at the song', async ($, on) => {
   expect(answered).toContain('"Test Song" by')
   // The next card goes back to the rotation.
   expect((await $.command.run({ command: 'next', args: '' }))?.text).not.toContain('Name that tune')
+})
+
+test('Apple Music data makes album, artist and tracklist questions', async () => {
+  const song = (trackName: string, collectionName: string, artistName = 'Fleetwood Mac') => ({ trackName, collectionName, artistName, collectionArtistName: artistName, primaryGenreName: 'Rock' })
+  const results = [
+    song('Dreams', 'Rumours (Super Deluxe Edition)'), song('Go Your Own Way', 'Rumours'), song('The Chain', 'Rumours'),
+    song('Tusk', 'Tusk'), song('Sara', 'Tusk'), song('Big Love', 'Tango in the Night'), song('Little Lies', 'Tango in the Night'),
+    song('Rhiannon', 'Fleetwood Mac'), song('Landslide', 'Fleetwood Mac'), song('Albatross', 'Then Play On'),
+    song('Dreams', 'Greatest Hits'), song('Dreams (Karaoke)', 'Karaoke Hits', 'Karaoke Kings'),
+  ]
+  const cards = appleCards(results, 'Fleetwood Mac', peersOf('Fleetwood Mac'))
+  expect(cleanAlbum('Rumours (Super Deluxe Edition)')).toBe('Rumours')
+  expect(cleanAlbum('Red (Taylor\'s Version) [+ A Message from Taylor]')).toBe('Red')
+  const album = cards.find(c => c.kind === 'apple-album' && c.question?.includes('"Dreams"'))
+  if (album) {
+    expect(album.answer).toBe('Rumours')
+    expect(album.wrong).not.toContain('Greatest Hits')
+    expect(album.isHeaderHidden).toBe(true)
+  }
+  expect(cards.some(c => c.kind === 'apple-artist')).toBe(true)
+  // "Rhiannon" is on the self-titled album, which would give the artist away.
+  expect(cards.some(c => c.kind === 'apple-artist' && c.question?.includes('"Rhiannon"'))).toBe(false)
+  for (const c of cards) expect(c.choices ? c.choices.includes(c.answer!) : (c.wrong ?? []).every(w => w !== c.answer)).toBe(true)
+  expect(peersOf('Nas')).toContain('Jay-Z')
 })

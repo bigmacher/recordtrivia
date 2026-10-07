@@ -1,6 +1,9 @@
 # Record Trivia
 
-A Claude Code mod that spins record and music trivia while Claude works.
+Record and music trivia, two ways:
+
+- **Web game** (`web/record-trivia.html`, published on claude.ai): thousands of multiple-choice questions and a shared leaderboard. Anyone you share the link with can play on a phone or computer, with no install.
+- **Claude Code mod** (this folder): trivia cards in the chat and above the prompt while Claude works.
 
 - **While Claude is working**, a band above the prompt shows an album, a trivia question, and then reveals the answer and a fact halfway through each card.
 - **`/trivia`** prints a trivia card right in the chat, so it works on a phone too. Type **`/answer`** to reveal it and **`/next`** for another record. `/trivia pane` opens the side panel in a terminal, which has **Reveal** (`r`), **Next record** (`n`) and **Sync** (`s`) buttons. All of these run instantly, even while Claude is busy.
@@ -33,6 +36,19 @@ Answer `y` to add the marketplace, then pick a scope.
 4. Optionally change **Seconds per card** (default 20).
 
 The mod reads up to 1,000 records, re-syncs every 30 minutes, and has a **Sync Discogs** button in the `/trivia` pane. With no username set, it uses its built-in deck of 60 classic albums.
+
+## Web game
+
+The game page is one self-contained HTML file with the question bank built in. Each player's score is saved under their own entry on the shared board, so it follows them to other devices. On a personal Claude account, only people you invite **by email as Editors** can post to the board, and only while the page isn't shared by public link. Everyone else can still play and watch, and their score stays on their own device.
+
+Rebuild the question bank and the page:
+
+```
+npx tsx scripts/build-bank.mts   # searches Apple Music for each artist (about 15 minutes; cached in .bank-cache/)
+node scripts/pack-web.mjs        # writes web/record-trivia.html
+```
+
+The bank combines the 60 hand-written albums with questions generated from Apple Music song data: which album a song is on, who recorded a song, and which song is on an album. Release years are not taken from Apple's data, since it often lists a reissue's date.
 
 ## Development
 

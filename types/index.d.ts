@@ -14,9 +14,11 @@ export type Trivia = {
   isYearHidden?: boolean
   // The cover would give the answer away (Name That Tune), so it waits for the answer.
   isCoverHidden?: boolean
+  // The album and artist would give the answer away, so the card's heading waits for the answer.
+  isHeaderHidden?: boolean
   // Genres and styles, for /trivia <genre>.
   genres?: string[]
-  source: 'deck' | 'discogs' | 'web'
+  source: 'deck' | 'discogs' | 'web' | 'apple'
   releaseId?: number
   url?: string
   coverUrl?: string
@@ -37,6 +39,7 @@ declare module 'claude-code' {
       isBandRevealed: boolean
       fromDiscogs: Trivia[]
       fromWeb: Trivia[]
+      fromApple: Trivia[]
       wiki: Record<string, WikiNote | null>
       covers: Record<string, string | null>
       discogsStatus: string

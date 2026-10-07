@@ -5,6 +5,8 @@ import type { Score, Trivia, WikiNote } from '../types'
 import { DECK } from './deck'
 import { describeFilter, matchesFilter, parseFilter } from './filter'
 import type { Filter } from './filter'
+import { appleCards, appleSearchUrl, ARTISTS, peersOf } from './apple-quiz'
+import type { AppleSong } from './apple-quiz'
 import { gradeGuess } from './guess'
 import { MAX_HINTS, hintFor } from './hints'
 import { itunesSearchUrl, tuneCard } from './tune'
@@ -29,6 +31,7 @@ const bandIndex = atom({ plugin: 'record-trivia', key: 'bandIndex' } as const, 0
 const isBandRevealed = atom({ plugin: 'record-trivia', key: 'isBandRevealed' } as const, false)
 const fromDiscogs = atom({ plugin: 'record-trivia', key: 'fromDiscogs' } as const, [])
 const fromWeb = atom({ plugin: 'record-trivia', key: 'fromWeb' } as const, [])
+const fromApple = atom({ plugin: 'record-trivia', key: 'fromApple' } as const, [])
 const wiki = atom({ plugin: 'record-trivia', key: 'wiki' } as const, {})
 const covers = atom({ plugin: 'record-trivia', key: 'covers' } as const, {})
 const awaiting = atom({ plugin: 'record-trivia', key: 'awaiting' } as const, 'none')
@@ -46,30 +49,29 @@ function discogsHeaders(settings: Settings): Record<string, string> {
   return settings.token ? { ...base, Authorization: `Discogs token=${settings.token}` } : base
 }
 
-// Every third card is an internet quiz question (every other one when the albums are only the built-in deck).
-function quizEvery(hasCollection: boolean): number {
-  return hasCollection ? 3 : 2
-}
 
 // The card at a position: albums and quiz questions each cycle on their own, so neither list limits the other.
-async function cardAt($: EngineInterface, position: number): Promise<{ card: Trivia; total: number; quizSlot?: number }> {
+type Source = 'albums' | 'quiz' | 'apple'
+
+// The card at a position. Sources take turns (albums, Open Trivia DB, Apple Music) and each cycles
+// on its own, so no list limits another.
+async function cardAt($: EngineInterface, position: number): Promise<{ card: Trivia; total: number; source: Source; slot: number }> {
   const mine = await read($, fromDiscogs)
   const all = mine.length ? mine : DECK
   const filter = parseFilter(await read($, filterText))
   const picked = filter ? all.filter(c => matchesFilter(c, filter)) : all
   const albums = picked.length ? picked : all
-  // Quiz questions carry no decade or genre, so a filter leaves them out.
+  // Quiz questions carry no decade or genre, so a filter leaves them out; Apple ones keep their genre.
   const quiz = filter ? [] : await read($, fromWeb)
-  const every = quizEvery(mine.length > 0)
-  const total = albums.length + quiz.length
-  if (quiz.length && position % every === every - 1) {
-    const quizSlot = Math.floor(position / every)
-    return { card: quiz[quizSlot % quiz.length]!, total, quizSlot }
-  }
-  const albumSlot = quiz.length ? position - Math.floor((position + 1) / every) : position
-  const card = albums[albumSlot % albums.length] ?? DECK[0]!
+  const appleAll = await read($, fromApple)
+  const apple = filter ? appleAll.filter(c => matchesFilter(c, filter)) : appleAll
+  const sources = ([['albums', albums], ['quiz', quiz], ['apple', apple]] as [Source, Trivia[]][]).filter(([, list]) => list.length)
+  const total = albums.length + quiz.length + apple.length
+  const [source, list] = sources[position % sources.length]!
+  const slot = Math.floor(position / sources.length)
+  const card = list[slot % list.length] ?? DECK[0]!
 
-  return { card: varyCard(card, albums, position), total }
+  return { card: source === 'quiz' ? card : varyCard(card, albums, position), total, source, slot }
 }
 
 async function lookUpWikipedia($: EngineInterface, card: Trivia) {
@@ -150,6 +152,29 @@ async function pullWebQuiz($: EngineInterface, settings: Settings) {
   }
 }
 
+// Adds questions from Apple Music song data for a few artists not asked about yet.
+async function pullApple($: EngineInterface, settings: Settings, artists: number) {
+  if (!settings.isWebOn) return
+  const asked = new Set(((await $.store.get('appleArtists')) as string[] | undefined) ?? [])
+  const left = ARTISTS.filter(a => !asked.has(a))
+  const pool = left.length ? left : ARTISTS
+  const start = Math.floor(await $.clock.now()) % pool.length
+  for (let i = 0; i < artists; i++) {
+    const artist = pool[(start + i * 37) % pool.length]!
+    try {
+      const res = await $.http.fetch(appleSearchUrl(artist), { headers: { 'User-Agent': USER_AGENT } })
+      if (!res.ok) return
+      const cards = appleCards((JSON.parse(res.text) as { results?: AppleSong[] }).results ?? [], artist, peersOf(artist))
+      await update($, fromApple, have => [...have, ...cards].slice(-600))
+      asked.add(artist)
+    } catch {
+      return
+    }
+  }
+  // Once every artist has been asked about, start the round again.
+  await $.store.set('appleArtists', asked.size >= ARTISTS.length ? [] : [...asked])
+}
+
 // The card being played in the chat: a Name That Tune round, or the rotation's.
 async function currentCard($: EngineInterface): Promise<Trivia> {
   return (await read($, special)) ?? (await cardAt($, await read($, index))).card
@@ -173,10 +198,12 @@ async function nextBandCard($: EngineInterface, settings: Settings) {
 
 async function afterAdvance($: EngineInterface, settings: Settings, position: number) {
   void prepareAt($, settings, position + 1)
-  // Running low on fresh quiz questions: fetch the next batch.
-  const { quizSlot } = await cardAt($, position)
+  // Running low on fresh questions from a source: fetch more.
+  const { source, slot } = await cardAt($, position)
   const quiz = await read($, fromWeb)
-  if (quizSlot !== undefined && quizSlot % Math.max(1, quiz.length) >= quiz.length - 5) void pullWebQuiz($, settings)
+  if (source === 'quiz' && slot % Math.max(1, quiz.length) >= quiz.length - 5) void pullWebQuiz($, settings)
+  const apple = await read($, fromApple)
+  if (source === 'apple' && slot % Math.max(1, apple.length) >= apple.length - 5) void pullApple($, settings, 2)
 }
 
 async function syncCollection($: EngineInterface, settings: Settings) {
@@ -230,6 +257,11 @@ function isCoverShown(card: Trivia, revealed: boolean): boolean {
 }
 
 // A question about the year keeps the year out of sight until the answer.
+// A heading that names the answer waits for it.
+function headingOf(card: Trivia, revealed: boolean): { album: string; artist: string } {
+  return card.isHeaderHidden && !revealed ? { album: '🎵 Music trivia', artist: '' } : { album: card.album, artist: card.artist }
+}
+
 function yearOf(card: Trivia, revealed: boolean): number | undefined {
   return card.year && (revealed || !card.isYearHidden) ? card.year : undefined
 }
@@ -243,7 +275,10 @@ function scoreLine(s: Score): string {
 function cardText(card: Trivia, revealed: boolean, note?: WikiNote, verdict?: string, hints: string[] = []): string {
   const lines = verdict ? [verdict, ''] : []
   if (card.kind === 'tune') lines.push('🎧 Name that tune!')
-  else lines.push(`💿 ${card.album}${card.artist ? ` — ${card.artist}` : ''}${yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}`)
+  else {
+    const heading = headingOf(card, revealed)
+    lines.push(`💿 ${heading.album}${heading.artist ? ` — ${heading.artist}` : ''}${yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}`)
+  }
   const cover = coverOf(card, note)
   if (cover && isCoverShown(card, revealed)) lines.push(`🖼️ Cover: ${cover}`)
   if (card.question) lines.push('', `Q: ${card.question}`)
@@ -522,12 +557,14 @@ export const register: Register = (on, options) => {
     await update($, bandIndex, () => (now + 500) % 1000)
     void (async () => {
       await pullWebQuiz($, settings)
+      await pullApple($, settings, 3)
       await syncCollection($, settings)
       await prepareAt($, settings, await read($, index))
     })()
     $.clock.every(SYNC_MS, () => {
       void syncCollection($, settings)
       void pullWebQuiz($, settings)
+      void pullApple($, settings, 2)
     })
     // Flip the card to its answer, then advance, on a steady beat.
     $.clock.every(halfMs, () => {
@@ -617,8 +654,8 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column">
         <Text>
           <Text color="magenta">◉ </Text>
-          <Text bold>{card.album}</Text>
-          {card.artist ? <Text dimColor> — {card.artist}{yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}</Text> : null}
+          <Text bold>{headingOf(card, revealed).album}</Text>
+          {headingOf(card, revealed).artist ? <Text dimColor> — {headingOf(card, revealed).artist}{yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}</Text> : null}
         </Text>
         {card.question ? (
           <Text>
@@ -642,7 +679,7 @@ export const register: Register = (on, options) => {
     const status = await read($, discogsStatus)
     const quizCount = (await read($, fromWeb)).length
     const note = (await read($, wiki))[wikiKey(card)]
-    const label = card.album.slice(0, 9).toUpperCase().padEnd(9)
+    const label = headingOf(card, revealed).album.replace(/^\W+/, '').slice(0, 9).toUpperCase().padEnd(9)
 
     return (
       <Box flexDirection="column">
@@ -659,8 +696,8 @@ export const register: Register = (on, options) => {
             <Text color="gray">  ▀▀█████▀▀  </Text>
           </Box>
           <Box flexDirection="column">
-            <Text bold>{card.album}</Text>
-            <Text>{card.artist}</Text>
+            <Text bold>{headingOf(card, revealed).album}</Text>
+            <Text>{headingOf(card, revealed).artist}</Text>
             {yearOf(card, revealed) ? <Text dimColor>{String(yearOf(card, revealed))}</Text> : null}
             {card.url ? <Link href={card.url} label="View on Discogs" /> : null}
             {note ? <Link href={note.url} label="Read on Wikipedia" /> : null}
