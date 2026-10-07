@@ -215,7 +215,7 @@ It sends nothing about you, your code or your files: only artist and album names
 
 ## Sharing the mod
 
-Once this repository is public, anyone installs the mod with the two commands under [Install the mod](#install-the-mod). To share it with a few people while it's private, add them under the repository's **Settings → Collaborators**. Your scores and settings stay on your own computer; nothing private is stored in this repository.
+Anyone can install the mod with the two commands under [Install the mod](#install-the-mod). Your scores and settings stay on your own computer; nothing private is stored in this repository.
 
 ## Development
 

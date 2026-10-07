@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
 - Screenshots of the trivia box and the web game in the README.
 - A Buy Me a Coffee link: a Sponsor button on GitHub (`.github/FUNDING.yml`), a README badge and Support section, and a link in the web game's footer.
