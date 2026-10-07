@@ -174,6 +174,51 @@ test('"yes" after an answer is taken as next; other prompts pass through', async
   expect((await $.prompt.submit({ text: 'can you fix the failing build?', wait: false }))?.text).toBe('can you fix the failing build?')
 })
 
+test('a short request to Claude is not taken as a guess or a yes', async ($, on) => {
+  mock.store(on)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  for (const text of ['run the tests', 'commit and push', 'fix it', 'help']) {
+    await $.command.run({ command: 'next', args: '' })
+    expect((await $.prompt.submit({ text, wait: false }))?.text).toBe(text)
+  }
+  await $.command.run({ command: 'answer', args: '' })
+  expect((await $.prompt.submit({ text: 'ok', wait: false }))?.text).toBe('ok')
+  await $.command.run({ command: 'answer', args: '' })
+  expect((await $.prompt.submit({ text: 'sure', wait: false }))?.text).toBe('sure')
+})
+
+test('the open card stays put when a background fetch adds questions', async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  let release = () => {}
+  const gate = new Promise<void>(resolve => { release = resolve })
+  let isQuizIn = false
+  on('http.fetch', async (_$, e) => {
+    const body = e.url.includes('api_token.php')
+      ? { response_code: 0, token: 'tok' }
+      : e.url.includes('opentdb.com/api.php')
+        ? (await gate, isQuizIn = true, {
+          response_code: 0,
+          results: [1, 2, 3].map(n => ({ type: 'multiple', question: encodeURIComponent(`Quiz question ${n}?`), correct_answer: 'Right', incorrect_answers: ['W1', 'W2', 'W3'] })),
+        })
+        : {}
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(body) } }
+  })
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', () => ({ cwd: '/' }))
+  await $.session.start({ cwd: '/', surface: null, isInteractive: true } as never)
+  // With only albums loaded, position 1 is an album; once the quiz arrives it would be a quiz question.
+  const shown = (await $.command.run({ command: 'next', args: '' }))?.text ?? ''
+  release()
+  for (let i = 0; i < 20 && !isQuizIn; i++) await clock.advance(0)
+  await clock.advance(0)
+  const revealed = (await $.command.run({ command: 'answer', args: '' }))?.text ?? ''
+  const question = (t: string) => t.split('\n').find(l => l.startsWith('Q: '))
+  expect(isQuizIn).toBe(true)
+  expect(question(shown)).toBeDefined()
+  expect(question(revealed)).toBe(question(shown))
+})
+
 test('guesses match forgivingly', async () => {
   const card = (answer: string, choices?: string[]) => ({ album: 'x', artist: 'y', answer, choices, source: 'deck' as const })
   expect(isRightGuess(card('Paul McCartney'), 'mccartney')).toBe(true)
