@@ -1,5 +1,14 @@
 {
   "name": "recordtrivia",
-  "owner": { "name": "bigmacher" },
-  "plugins": [{ "name": "record-trivia", "source": "./" }]
+  "owner": {
+    "name": "bigmacher"
+  },
+  "description": "Record Trivia: music trivia for Claude Code.",
+  "plugins": [
+    {
+      "name": "record-trivia",
+      "source": "./",
+      "description": "Record and music trivia in Claude Code: a card above the prompt while Claude works, and a scored game in the chat"
+    }
+  ]
 }
