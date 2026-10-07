@@ -12,6 +12,8 @@ Music trivia for people who spend their day in Claude Code. There are three sepa
 
 1 and 2 come together in one Claude Code mod. 3 is a web page you open from a link.
 
+![The Record Trivia box above the Claude Code prompt, showing an answer](docs/strip-answer.png)
+
 > **THIS IS FOR FUN. IF SOMETHING IS WRONG - SORRY - ENTERTAINMENT PURPOSES ONLY.**
 >
 > Questions are written by hand or built automatically from public music data, and some answers may be out of date or just plain wrong.
@@ -55,16 +57,13 @@ claude plugin install record-trivia@recordtrivia
 
 ## 1. Trivia while Claude works
 
-Nothing to type. Whenever Claude is busy with a task, a magenta box labeled **♫ RECORD TRIVIA** appears just above the prompt:
+Nothing to type. Whenever Claude is busy with a task, a magenta box labeled **♫ RECORD TRIVIA** appears just above the prompt. First the question:
 
-```
-╭──────────────────────────────────────────────────────╮
-│ ♫ RECORD TRIVIA · think fast                         │
-│ ◉ Synchronicity — The Police (1983)                  │
-│ Q: Which song from it became their biggest hit?      │
-│    Roxanne · Every Breath You Take · Message in a …  │
-╰──────────────────────────────────────────────────────╯
-```
+![The question, with four options and "answer soon"](docs/strip-question.png)
+
+Then, 15 seconds later, the answer and a fact:
+
+![The answer, with a short Wikipedia summary of the album](docs/strip-answer.png)
 
 - The question shows for 15 seconds, then the answer and a fact for 15 seconds, then the next record.
 - It disappears when Claude finishes.
@@ -173,6 +172,8 @@ All optional. Change them with `/plugin configure record-trivia@recordtrivia` in
 [Play Record Trivia](https://claude.ai/artifact/Q2ovgJvvBR1Gfjn2g82pPK)
 
 A separate game you play in a browser, on a phone or a computer. You don't need the mod or Claude Code.
+
+<img src="docs/web-game.png" alt="The web game: a question with four options, a 50/50 hint, and The Board leaderboard below" width="480">
 
 - 2,219 questions built into the page: the 60 hand-written albums plus Apple Music questions. Every card is multiple choice or true or false, so you play by tapping.
 - A **Crate** menu to play one genre, a 50/50 hint, and a 🔥 streak.
