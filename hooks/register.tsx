@@ -278,7 +278,10 @@ async function cardReply($: EngineInterface, settings: Settings, verdict?: strin
   if (isCoverShown(card, revealed)) await fetchCover($, card, note)
   await update($, awaiting, () => (revealed ? 'next' : 'answer'))
 
-  return cardText(card, revealed, note, verdict)
+  // Every card ends with the score; a scored answer already leads with it.
+  const total = verdict?.includes('🏆') ? '' : `\n\n${scoreLine(await read($, score))}`
+
+  return cardText(card, revealed, note, verdict) + total
 }
 
 // Scores a guess at the open card, once: a card already answered scores nothing.
@@ -355,7 +358,7 @@ async function runTrivia($: EngineInterface, settings: Settings, reply: TriviaRe
     const now = await $.clock.now()
     await update($, index, () => now % 1000)
     await update($, isRevealed, () => false)
-    return cardReply($, settings, '🔄 New game! Score: 0')
+    return cardReply($, settings, '🔄 New game!')
   }
 
   return cardReply($, settings)

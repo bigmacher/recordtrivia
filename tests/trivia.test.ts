@@ -132,6 +132,7 @@ test('keeps a Wikipedia summary only when it is the right album', async () => {
 test('/trivia prints the card in the chat, then the answer', async $ => {
   const shown = await $.command.run({ command: 'trivia', args: '' })
   expect(shown?.text).toContain('Q:')
+  expect(shown?.text).toContain('🏆 Score:')
   expect(shown?.text).toContain('"answer"')
   const answered = await $.command.run({ command: 'answer', args: '' })
   expect(answered?.text).toContain('Next? Reply yes.')
@@ -284,5 +285,6 @@ test('"restart trivia" starts a new game with the score at 0', async ($, on) => 
   await clock.advance(100)
   expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: 0 (0 right, 0 wrong)')
   const fresh = await $.command.run({ command: 'trivia', args: 'restart' })
-  expect(fresh?.text).toContain('🔄 New game! Score: 0')
+  expect(fresh?.text).toContain('🔄 New game!')
+  expect(fresh?.text).toContain('🏆 Score: 0 (0 right, 0 wrong)')
 })
