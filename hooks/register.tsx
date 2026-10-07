@@ -350,7 +350,7 @@ async function cardReply($: EngineInterface, settings: Settings, verdict?: strin
   const card = await currentCard($)
   const revealed = await read($, isRevealed)
   const used = await read($, hintsUsed)
-  const hints = Array.from({ length: used }, (_, i) => hintFor(card, i + 1)).filter((h): h is string => !!h)
+  const hints = Array.from({ length: used }, (_, i) => hintFor(card, i + 1)).filter((hint): hint is string => !!hint)
   if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
   const note = card.source === 'web' ? undefined : (await read($, wiki))[wikiKey(card)] ?? undefined
   if (isCoverShown(card, revealed)) await fetchCover($, card, note)
