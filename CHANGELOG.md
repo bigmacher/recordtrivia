@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3
+
+- Rename a variable named `h` in `hooks/register.tsx`, which the directory reserves for JSX.
+
 ## 0.5.2
 
 - Screenshots of the trivia box and the web game in the README.
