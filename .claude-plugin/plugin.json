@@ -49,11 +49,11 @@
       "default": 2,
       "required": false
     },
-    "pointsHint": {
+    "pointsRightWithHint": {
       "type": "number",
-      "title": "Points off for a hint",
-      "description": "Taken off for each hint you ask for (two per card at most).",
-      "default": 1,
+      "title": "Points for a right answer after a hint",
+      "description": "Earned instead of the full amount when you asked for a hint first.",
+      "default": 5,
       "required": false
     },
     "rotateSeconds": {

@@ -12,7 +12,7 @@ A Claude Code mod that spins record and music trivia while Claude works.
 
 - **Just reply:** after a question, type your guess (an album name, a year, or a letter for multiple choice). Small typos are forgiven. Reply "answer" or "I don't know" to see the answer without scoring, and "next" to skip. After an answer, reply "yes" for the next record. Longer messages and questions still go to Claude.
 - **Mixed formats:** about 40% of album cards are multiple choice, 20% are true or false, and the rest take a typed answer. On a multiple-choice card reply with the letter, and on a true-or-false card reply true/false or yes/no.
-- **Hints:** reply "hint" (or `/hint`) for a clue, for −1 point each, two per card. You get the number of words and the first letter, the decade, or a 50/50 on multiple choice.
+- **Hints:** reply "hint" (or `/hint`) for a clue, up to two per card. A right answer after a hint earns 5 points instead of 10. You get the number of words and the first letter, the decade, or a 50/50 on multiple choice.
 - **Pick a decade or genre:** `/trivia 80s`, `/trivia 1990s`, `/trivia hip hop`, `/trivia jazz`, and so on. `/trivia all` plays everything again. Your choice is remembered.
 - **Name that tune:** `/tune` (or reply "name that tune") plays a 30-second preview from Apple Music. Tap the link to listen, then type the song title. Hint 1 tells you the artist.
 - **Running score:** +10 for a right guess, −2 for a close one (a year off by one, part of the answer, or a near spelling), −5 for a wrong one, with a 🔥 streak after three right in a row. The score is kept between sessions. `/score` shows it. Reply "restart trivia" (or type `/trivia restart`) for a new game with the score back at 0. Change the points in `/config`.

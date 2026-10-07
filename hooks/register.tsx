@@ -39,7 +39,7 @@ const filterText = atom({ plugin: 'record-trivia', key: 'filterText' } as const,
 const special = atom({ plugin: 'record-trivia', key: 'special' } as const, null)
 const discogsStatus = atom({ plugin: 'record-trivia', key: 'discogsStatus' } as const, 'not set up')
 
-type Settings = { username: string; token: string; isWebOn: boolean; pointsRight: number; pointsClose: number; pointsWrong: number; pointsHint: number }
+type Settings = { username: string; token: string; isWebOn: boolean; pointsRight: number; pointsClose: number; pointsWrong: number; pointsRightWithHint: number }
 
 function discogsHeaders(settings: Settings): Record<string, string> {
   const base = { 'User-Agent': USER_AGENT }
@@ -320,7 +320,9 @@ async function judge($: EngineInterface, settings: Settings, guess: string): Pro
   const card = await currentCard($)
   if (!card.answer) return undefined
   const grade = gradeGuess(card, guess)
-  const change = grade === 'right' ? settings.pointsRight : grade === 'close' ? -settings.pointsClose : -settings.pointsWrong
+  // A hint halves what a right answer earns.
+  const reward = (await read($, hintsUsed)) > 0 ? settings.pointsRightWithHint : settings.pointsRight
+  const change = grade === 'right' ? reward : grade === 'close' ? -settings.pointsClose : -settings.pointsWrong
   const now = await update($, score, s => ({
     points: s.points + change,
     right: s.right + (grade === 'right' ? 1 : 0),
@@ -330,7 +332,7 @@ async function judge($: EngineInterface, settings: Settings, guess: string): Pro
   }))
   await $.store.set('score', now)
   const head = grade === 'right'
-    ? `✅ Right! +${settings.pointsRight}`
+    ? `✅ Right! +${reward}`
     : grade === 'close'
       ? `🤏 Close: "${guess}". −${settings.pointsClose}`
       : `❌ Not quite: "${guess}". −${settings.pointsWrong}`
@@ -387,10 +389,8 @@ async function giveHint($: EngineInterface, settings: Settings): Promise<string>
   if (await read($, isRevealed)) return cardReply($, settings, 'The answer is already out. Reply yes for the next one.')
   if (used >= MAX_HINTS || !hintFor(card, used + 1)) return cardReply($, settings, 'No more hints for this one.')
   await update($, hintsUsed, n => n + 1)
-  const now = await update($, score, s => ({ ...s, points: s.points - settings.pointsHint }))
-  await $.store.set('score', now)
 
-  return cardReply($, settings, `💡 Hint −${settings.pointsHint}\n${scoreLine(now)}`)
+  return cardReply($, settings, `💡 Hint: a right answer now earns ${settings.pointsRightWithHint} instead of ${settings.pointsRight}.`)
 }
 
 // A Name That Tune round: a 30-second iTunes preview of a song by an artist from the deck.
@@ -476,7 +476,7 @@ export const register: Register = (on, options) => {
     pointsRight: Math.max(0, Number(options.pointsRight ?? 10)),
     pointsClose: Math.max(0, Number(options.pointsClose ?? 2)),
     pointsWrong: Math.max(0, Number(options.pointsWrong ?? 5)),
-    pointsHint: Math.max(0, Number(options.pointsHint ?? 1)),
+    pointsRightWithHint: Math.max(0, Number(options.pointsRightWithHint ?? 5)),
   }
   const halfMs = Math.max(5, Number(options.rotateSeconds ?? 20)) * 500
 
@@ -590,7 +590,7 @@ export const register: Register = (on, options) => {
       return { text: '🏆 Score reset to 0.' }
     }
 
-    return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer, −${settings.pointsClose} for a close one, −${settings.pointsWrong} for a wrong one. Reply "restart trivia" to start over.` }
+    return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer (+${settings.pointsRightWithHint} after a hint), −${settings.pointsClose} for a close one, −${settings.pointsWrong} for a wrong one. Reply "restart trivia" to start over.` }
   })
 
   on('command.run', { command: 'next' }, async $ => ({ text: await runTrivia($, settings, { command: 'next', args: '' }) }))

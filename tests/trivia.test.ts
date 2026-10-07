@@ -355,7 +355,7 @@ test('a hint costs a point, and /trivia 80s plays only 80s albums', async ($, on
   }
   const hinted = await $.command.run({ command: 'hint', args: '' })
   expect(hinted?.text).toContain('💡')
-  expect((await $.command.run({ command: 'score', args: '' }))?.text).toMatch(/Score: -1|No more hints/)
+  expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: 0 (0 right')
   expect((await $.command.run({ command: 'trivia', args: 'all' }))?.text).toContain('Playing everything again')
 })
 
@@ -378,7 +378,7 @@ test('/tune plays a preview and takes a guess at the song', async ($, on) => {
   const hinted = (await $.command.run({ command: 'hint', args: '' }))?.text ?? ''
   expect(hinted).toContain("Hint 1: It's by")
   const answered = (await $.command.run({ command: 'answer', args: 'test song' }))?.text ?? ''
-  expect(answered).toContain('✅ Right!')
+  expect(answered).toContain('✅ Right! +5')
   expect(answered).toContain('"Test Song" by')
   // The next card goes back to the rotation.
   expect((await $.command.run({ command: 'next', args: '' }))?.text).not.toContain('Name that tune')
