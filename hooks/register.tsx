@@ -585,20 +585,15 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     await update($, awaiting, () => 'none')
-    // A command cannot run from inside this hook, so it runs a moment later, on its own.
-    $.clock.after(20, () => {
-      $.command.run(reply).catch(async () => {
-        const text = await runTrivia($, settings, reply)
-        await $.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } }).catch(() => undefined)
-      })
-    })
-
+    // The reply is answered here, in the line that replaces the prompt. A /answer or /next the mod
+    // ran for itself would skip the mod's own command hooks, so nothing would answer it.
+    const card = await runTrivia($, settings, reply)
     const said = reply.command === 'next' ? '▶ Next record'
       : reply.command === 'trivia' ? '▶ New game'
         : reply.command === 'hint' ? '▶ Hint'
           : reply.command === 'tune' ? '▶ Name that tune'
             : reply.args ? `▶ Your guess: ${reply.args}` : '▶ The answer'
-    return { drop: said }
+    return { drop: `${said}\n\n${card}` }
   }).catch(($, e, next) => next(e))
 
   // A fresh card each time Claude starts working.

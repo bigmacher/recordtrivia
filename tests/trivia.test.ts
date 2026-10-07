@@ -13,6 +13,8 @@ import { cardsFromOpenTdb, noteFromSummary, wikiCandidates } from '../hooks/web'
 
 const SCROLL = { offset: 0, bodyRows: 10 }
 
+const firstLine = (result: unknown) => ((result as { drop?: string })?.drop ?? '').split('\n')[0]
+
 const PAGE = {
   pagination: { page: 1, pages: 1 },
   releases: [{
@@ -156,14 +158,17 @@ test('wraps a downloaded cover in an SVG the apps can draw', async () => {
 })
 
 test('"yes" after an answer is taken as next; other prompts pass through', async ($, on) => {
+  mock.store(on)
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   await $.command.run({ command: 'answer', args: '' })
-  expect(await $.prompt.submit({ text: 'yes', wait: false })).toEqual({ drop: '▶ Next record' })
+  expect(firstLine(await $.prompt.submit({ text: 'yes', wait: false }))).toBe('▶ Next record')
+  // The next card is open now, so a question for Claude passes through and ends the exchange.
+  expect((await $.prompt.submit({ text: 'can you look at my build?', wait: false }))?.text).toBe('can you look at my build?')
   expect((await $.prompt.submit({ text: 'yes', wait: false }))?.text).toBe('yes')
   await $.command.run({ command: 'next', args: '' })
-  expect(await $.prompt.submit({ text: "I don't know", wait: false })).toEqual({ drop: '▶ The answer' })
+  expect(firstLine(await $.prompt.submit({ text: "I don't know", wait: false }))).toBe('▶ The answer')
   await $.command.run({ command: 'next', args: '' })
-  expect(await $.prompt.submit({ text: 'Motorcycle', wait: false })).toEqual({ drop: '▶ Your guess: Motorcycle' })
+  expect(firstLine(await $.prompt.submit({ text: 'Motorcycle', wait: false }))).toBe('▶ Your guess: Motorcycle')
   await $.command.run({ command: 'next', args: '' })
   expect((await $.prompt.submit({ text: 'can you fix the failing build?', wait: false }))?.text).toBe('can you fix the failing build?')
 })
@@ -274,7 +279,10 @@ test('a typed guess is scored and answered a moment later', async ($, on) => {
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   await $.command.run({ command: 'score', args: 'reset' })
   await $.command.run({ command: 'trivia', args: '' })
-  expect(await $.prompt.submit({ text: 'Piano man', wait: false })).toEqual({ drop: '▶ Your guess: Piano man' })
+  const dropped = await $.prompt.submit({ text: 'Piano man', wait: false })
+  // The answer card comes back in the same line, with no command of the mod's own in between.
+  expect(firstLine(dropped)).toBe('▶ Your guess: Piano man')
+  expect((dropped as { drop?: string }).drop).toContain('❌ Not quite: "Piano man". −5')
   await clock.advance(100)
   expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: -5 (0 right, 1 wrong)')
 })
@@ -285,7 +293,9 @@ test('"restart trivia" starts a new game with the score at 0', async ($, on) => 
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   await $.command.run({ command: 'trivia', args: '' })
   await $.command.run({ command: 'answer', args: 'wrong guess' })
-  expect(await $.prompt.submit({ text: 'Restart trivia', wait: false })).toEqual({ drop: '▶ New game' })
+  const restarted = await $.prompt.submit({ text: 'Restart trivia', wait: false })
+  expect(firstLine(restarted)).toBe('▶ New game')
+  expect((restarted as { drop?: string }).drop).toContain('🔄 New game!')
   await clock.advance(100)
   expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: 0 (0 right, 0 wrong)')
   const fresh = await $.command.run({ command: 'trivia', args: 'restart' })
