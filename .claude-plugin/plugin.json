@@ -1,10 +1,10 @@
 {
   "name": "record-trivia",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "bigmacher"
   },
-  "description": "Record & music trivia above the prompt while Claude works, from your Discogs collection, Open Trivia DB and Wikipedia",
+  "description": "Record and music trivia in Claude Code: a card above the prompt while Claude works, and a scored game in the chat",
   "types": "./types/index.d.ts",
   "userConfig": {
     "discogsUsername": {
@@ -59,8 +59,8 @@
     "rotateSeconds": {
       "type": "number",
       "title": "Seconds per card",
-      "description": "How long each trivia card shows before the next one (the answer is revealed halfway).",
-      "default": 20,
+      "description": "How long each card shows above the prompt while Claude works: the question for the first half, the answer for the second.",
+      "default": 30,
       "required": false
     }
   }

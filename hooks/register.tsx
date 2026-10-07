@@ -513,7 +513,8 @@ export const register: Register = (on, options) => {
     pointsWrong: Math.max(0, Number(options.pointsWrong ?? 5)),
     pointsRightWithHint: Math.max(0, Number(options.pointsRightWithHint ?? 5)),
   }
-  const halfMs = Math.max(5, Number(options.rotateSeconds ?? 20)) * 500
+  // The question shows for half the card's time, the answer for the other half.
+  const halfMs = Math.max(5, Number(options.rotateSeconds ?? 30)) * 500
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
