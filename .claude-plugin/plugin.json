@@ -1,26 +1,12 @@
 {
   "name": "record-trivia",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": {
     "name": "bigmacher"
   },
   "description": "Record and music trivia in Claude Code: a card above the prompt while Claude works, and a scored game in the chat",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "discogsUsername": {
-      "type": "string",
-      "title": "Discogs username",
-      "description": "Whose collection to build trivia from. Leave empty to use the built-in deck only.",
-      "default": "",
-      "required": false
-    },
-    "discogsToken": {
-      "type": "string",
-      "title": "Discogs personal access token",
-      "description": "Needed if your collection is private (Discogs > Settings > Developers > Generate new token).",
-      "sensitive": true,
-      "required": false
-    },
     "webTrivia": {
       "type": "boolean",
       "title": "Trivia from the internet",

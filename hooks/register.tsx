@@ -505,8 +505,9 @@ async function runTrivia($: EngineInterface, settings: Settings, reply: TriviaRe
 
 export const register: Register = (on, options) => {
   const settings: Settings = {
-    username: String(options.discogsUsername ?? '').trim(),
-    token: String(options.discogsToken ?? '').trim(),
+    // Discogs collections are switched off for now: with no username, nothing syncs.
+    username: '',
+    token: '',
     isWebOn: options.webTrivia !== false,
     pointsRight: Math.max(0, Number(options.pointsRight ?? 10)),
     pointsClose: Math.max(0, Number(options.pointsClose ?? 2)),
@@ -674,7 +675,6 @@ export const register: Register = (on, options) => {
     const { total } = await cardAt($, await read($, index))
     const card = await currentCard($)
     const revealed = await read($, isRevealed)
-    const status = await read($, discogsStatus)
     const quizCount = (await read($, fromWeb)).length
     const note = (await read($, wiki))[wikiKey(card)]
     const label = headingOf(card, revealed).album.replace(/^\W+/, '').slice(0, 9).toUpperCase().padEnd(9)
@@ -724,13 +724,13 @@ export const register: Register = (on, options) => {
               onPress={() => update($, isRevealed, () => true)} />
           ) : null}
           <Button key="next" label="Next record" hotkey="n" onPress={() => nextCard($, settings)} />
-          <Button key="sync" label="Sync" hotkey="s" onPress={async () => {
+          <Button key="sync" label="Refresh" hotkey="s" onPress={async () => {
             await pullWebQuiz($, settings)
-            await syncCollection($, settings)
+            await pullApple($, settings, 2)
           }} />
         </Box>
         <Text dimColor>
-          {total} cards · Discogs: {status} · Web: {settings.isWebOn ? `${quizCount} quiz questions + Wikipedia` : 'off'}
+          {total} cards · Internet trivia: {settings.isWebOn ? `${quizCount} quiz questions, Apple Music, Wikipedia` : 'off'}
         </Text>
       </Box>
     )
