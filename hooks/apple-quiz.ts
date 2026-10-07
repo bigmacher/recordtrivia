@@ -40,7 +40,7 @@ export function peersOf(artist: string): string[] {
 }
 
 // Compilations, live sets, singles and EPs say little about the record a song belongs to.
-const NOT_AN_ALBUM = /greatest hits|best of|\bhits\b|collection|essential|anthology|karaoke|tribute|playlist|\bgold\b|ultimate|definitive|singles|\(live|live at|live in|live from|unplugged|sessions|soundtrack| - single$| - ep$|\bmix(es)?\b|remixes|christmas|holiday|box set|boxset|\bvol(ume)?\.? ?\d|music from|inspired by|motion picture|original score|: the album$/i
+const NOT_AN_ALBUM = /greatest hits|best of|\bhits\b|collection|essential|anthology|karaoke|tribute|playlist|\bgold\b|ultimate|definitive|singles|\(live|live at|live in|live from|unplugged|sessions|soundtrack| - single$| - ep$|\bmix(es)?\b|remixes|christmas|holiday|box set|boxset|\bvol(ume)?\.? ?\d|music from|inspired by|motion picture|original score|: the album$|complete|masters|rarities|b-sides|demos|we sold our soul|chronicle|retrospective/i
 
 // "Rumours (Super Deluxe Edition)" → "Rumours".
 export function cleanAlbum(name: string): string {
