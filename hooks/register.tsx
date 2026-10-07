@@ -3,7 +3,14 @@ import type { EngineInterface, Register, RenderElement, RenderInput } from 'clau
 
 import type { Score, Trivia, WikiNote } from '../types'
 import { DECK } from './deck'
-import { isRightGuess } from './guess'
+import { describeFilter, matchesFilter, parseFilter } from './filter'
+import type { Filter } from './filter'
+import { appleCards, appleSearchUrl, ARTISTS, peersOf } from './apple-quiz'
+import type { AppleSong } from './apple-quiz'
+import { gradeGuess } from './guess'
+import { MAX_HINTS, hintFor } from './hints'
+import { itunesSearchUrl, tuneCard } from './tune'
+import type { ItunesSong } from './tune'
 import { addDistractors, varyCard } from './variety'
 import { cardsFromPage, enrichCard } from './discogs'
 import type { CollectionPage, Release } from './discogs'
@@ -19,43 +26,52 @@ const USER_AGENT = 'RecordTriviaClaudeMod/0.1 (+https://github.com/bigmacher/rec
 
 const index = atom({ plugin: 'record-trivia', key: 'index' } as const, 0)
 const isRevealed = atom({ plugin: 'record-trivia', key: 'isRevealed' } as const, false)
+// The strip above the prompt rotates its own card, so it never moves the one you are answering.
+const bandIndex = atom({ plugin: 'record-trivia', key: 'bandIndex' } as const, 0)
+const isBandRevealed = atom({ plugin: 'record-trivia', key: 'isBandRevealed' } as const, false)
 const fromDiscogs = atom({ plugin: 'record-trivia', key: 'fromDiscogs' } as const, [])
 const fromWeb = atom({ plugin: 'record-trivia', key: 'fromWeb' } as const, [])
+const fromApple = atom({ plugin: 'record-trivia', key: 'fromApple' } as const, [])
 const wiki = atom({ plugin: 'record-trivia', key: 'wiki' } as const, {})
 const covers = atom({ plugin: 'record-trivia', key: 'covers' } as const, {})
 const awaiting = atom({ plugin: 'record-trivia', key: 'awaiting' } as const, 'none')
-const ZERO: Score = { points: 0, right: 0, wrong: 0, streak: 0 }
+const ZERO: Score = { points: 0, right: 0, close: 0, wrong: 0, streak: 0 }
 const score = atom({ plugin: 'record-trivia', key: 'score' } as const, ZERO)
+const hintsUsed = atom({ plugin: 'record-trivia', key: 'hintsUsed' } as const, 0)
+const filterText = atom({ plugin: 'record-trivia', key: 'filterText' } as const, '')
+const special = atom({ plugin: 'record-trivia', key: 'special' } as const, null)
 const discogsStatus = atom({ plugin: 'record-trivia', key: 'discogsStatus' } as const, 'not set up')
 
-type Settings = { username: string; token: string; isWebOn: boolean; pointsRight: number; pointsWrong: number }
+type Settings = { username: string; token: string; isWebOn: boolean; pointsRight: number; pointsClose: number; pointsWrong: number; pointsRightWithHint: number }
 
 function discogsHeaders(settings: Settings): Record<string, string> {
   const base = { 'User-Agent': USER_AGENT }
   return settings.token ? { ...base, Authorization: `Discogs token=${settings.token}` } : base
 }
 
-// Albums from your collection (or the built-in crate), with an internet quiz question every third card.
-// Every third card is an internet quiz question (every other one when the albums are only the built-in deck).
-function quizEvery(hasCollection: boolean): number {
-  return hasCollection ? 3 : 2
-}
 
 // The card at a position: albums and quiz questions each cycle on their own, so neither list limits the other.
-async function cardAt($: EngineInterface, position: number): Promise<{ card: Trivia; total: number; quizSlot?: number }> {
-  const mine = await read($, fromDiscogs)
-  const albums = mine.length ? mine : DECK
-  const quiz = await read($, fromWeb)
-  const every = quizEvery(mine.length > 0)
-  const total = albums.length + quiz.length
-  if (quiz.length && position % every === every - 1) {
-    const quizSlot = Math.floor(position / every)
-    return { card: quiz[quizSlot % quiz.length]!, total, quizSlot }
-  }
-  const albumSlot = quiz.length ? position - Math.floor((position + 1) / every) : position
-  const card = albums[albumSlot % albums.length] ?? DECK[0]!
+type Source = 'albums' | 'quiz' | 'apple'
 
-  return { card: varyCard(card, albums, position), total }
+// The card at a position. Sources take turns (albums, Open Trivia DB, Apple Music) and each cycles
+// on its own, so no list limits another.
+async function cardAt($: EngineInterface, position: number): Promise<{ card: Trivia; total: number; source: Source; slot: number }> {
+  const mine = await read($, fromDiscogs)
+  const all = mine.length ? mine : DECK
+  const filter = parseFilter(await read($, filterText))
+  const picked = filter ? all.filter(c => matchesFilter(c, filter)) : all
+  const albums = picked.length ? picked : all
+  // Quiz questions carry no decade or genre, so a filter leaves them out; Apple ones keep their genre.
+  const quiz = filter ? [] : await read($, fromWeb)
+  const appleAll = await read($, fromApple)
+  const apple = filter ? appleAll.filter(c => matchesFilter(c, filter)) : appleAll
+  const sources = ([['albums', albums], ['quiz', quiz], ['apple', apple]] as [Source, Trivia[]][]).filter(([, list]) => list.length)
+  const total = albums.length + quiz.length + apple.length
+  const [source, list] = sources[position % sources.length]!
+  const slot = Math.floor(position / sources.length)
+  const card = list[slot % list.length] ?? DECK[0]!
+
+  return { card: source === 'quiz' ? card : varyCard(card, albums, position), total, source, slot }
 }
 
 async function lookUpWikipedia($: EngineInterface, card: Trivia) {
@@ -136,14 +152,58 @@ async function pullWebQuiz($: EngineInterface, settings: Settings) {
   }
 }
 
-async function nextCard($: EngineInterface, settings: Settings) {
+// Adds questions from Apple Music song data for a few artists not asked about yet.
+async function pullApple($: EngineInterface, settings: Settings, artists: number) {
+  if (!settings.isWebOn) return
+  const asked = new Set(((await $.store.get('appleArtists')) as string[] | undefined) ?? [])
+  const left = ARTISTS.filter(a => !asked.has(a))
+  const pool = left.length ? left : ARTISTS
+  const start = Math.floor(await $.clock.now()) % pool.length
+  for (let i = 0; i < artists; i++) {
+    const artist = pool[(start + i * 37) % pool.length]!
+    try {
+      const res = await $.http.fetch(appleSearchUrl(artist), { headers: { 'User-Agent': USER_AGENT } })
+      if (!res.ok) return
+      const cards = appleCards((JSON.parse(res.text) as { results?: AppleSong[] }).results ?? [], artist, peersOf(artist))
+      await update($, fromApple, have => [...have, ...cards].slice(-600))
+      asked.add(artist)
+    } catch {
+      return
+    }
+  }
+  // Once every artist has been asked about, start the round again.
+  await $.store.set('appleArtists', asked.size >= ARTISTS.length ? [] : [...asked])
+}
+
+// The card being played in the chat: a Name That Tune round, or the rotation's.
+async function currentCard($: EngineInterface): Promise<Trivia> {
+  return (await read($, special)) ?? (await cardAt($, await read($, index))).card
+}
+
+async function freshCard($: EngineInterface) {
   await update($, isRevealed, () => false)
-  const position = await update($, index, i => i + 1)
+  await update($, hintsUsed, () => 0)
+  await update($, special, () => null)
+}
+
+async function nextCard($: EngineInterface, settings: Settings) {
+  await freshCard($)
+  await afterAdvance($, settings, await update($, index, i => i + 1))
+}
+
+async function nextBandCard($: EngineInterface, settings: Settings) {
+  await update($, isBandRevealed, () => false)
+  await afterAdvance($, settings, await update($, bandIndex, i => i + 1))
+}
+
+async function afterAdvance($: EngineInterface, settings: Settings, position: number) {
   void prepareAt($, settings, position + 1)
-  // Running low on fresh quiz questions: fetch the next batch.
-  const { quizSlot } = await cardAt($, position)
+  // Running low on fresh questions from a source: fetch more.
+  const { source, slot } = await cardAt($, position)
   const quiz = await read($, fromWeb)
-  if (quizSlot !== undefined && quizSlot % Math.max(1, quiz.length) >= quiz.length - 5) void pullWebQuiz($, settings)
+  if (source === 'quiz' && slot % Math.max(1, quiz.length) >= quiz.length - 5) void pullWebQuiz($, settings)
+  const apple = await read($, fromApple)
+  if (source === 'apple' && slot % Math.max(1, apple.length) >= apple.length - 5) void pullApple($, settings, 2)
 }
 
 async function syncCollection($: EngineInterface, settings: Settings) {
@@ -192,22 +252,33 @@ function coverOf(card: Trivia, note?: WikiNote | null): string | undefined {
 
 // The cover would give away a question about the cover, so it waits for the answer.
 function isCoverShown(card: Trivia, revealed: boolean): boolean {
+  if (card.isCoverHidden) return revealed
   return revealed || !/cover|sleeve|artwork/i.test(card.question ?? '')
 }
 
 // A question about the year keeps the year out of sight until the answer.
+// A heading that names the answer waits for it.
+function headingOf(card: Trivia, revealed: boolean): { album: string; artist: string } {
+  return card.isHeaderHidden && !revealed ? { album: '🎵 Music trivia', artist: '' } : { album: card.album, artist: card.artist }
+}
+
 function yearOf(card: Trivia, revealed: boolean): number | undefined {
   return card.year && (revealed || !card.isYearHidden) ? card.year : undefined
 }
 
 function scoreLine(s: Score): string {
   const streak = s.streak >= 3 ? ` · 🔥 ${s.streak} in a row` : ''
-  return `🏆 Score: ${s.points} (${s.right} right, ${s.wrong} wrong)${streak}`
+  const close = s.close ? `, ${s.close} close` : ''
+  return `🏆 Score: ${s.points} (${s.right} right${close}, ${s.wrong} wrong)${streak}`
 }
 
-function cardText(card: Trivia, revealed: boolean, note?: WikiNote, verdict?: string): string {
+function cardText(card: Trivia, revealed: boolean, note?: WikiNote, verdict?: string, hints: string[] = []): string {
   const lines = verdict ? [verdict, ''] : []
-  lines.push(`💿 ${card.album}${card.artist ? ` — ${card.artist}` : ''}${yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}`)
+  if (card.kind === 'tune') lines.push('🎧 Name that tune!')
+  else {
+    const heading = headingOf(card, revealed)
+    lines.push(`💿 ${heading.album}${heading.artist ? ` — ${heading.artist}` : ''}${yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}`)
+  }
   const cover = coverOf(card, note)
   if (cover && isCoverShown(card, revealed)) lines.push(`🖼️ Cover: ${cover}`)
   if (card.question) lines.push('', `Q: ${card.question}`)
@@ -215,6 +286,7 @@ function cardText(card: Trivia, revealed: boolean, note?: WikiNote, verdict?: st
     const mark = revealed && choice === card.answer ? ' ✅' : ''
     lines.push(`   ${String.fromCharCode(65 + i)}. ${choice}${mark}`)
   })
+  if (!revealed) hints.forEach((hint, i) => lines.push(`💡 Hint ${i + 1}: ${hint}`))
   if (revealed) {
     if (card.question && !card.choices) lines.push(`A: ${card.answer}`)
     if (card.fact) lines.push('', `♪ ${card.fact}`)
@@ -223,7 +295,8 @@ function cardText(card: Trivia, revealed: boolean, note?: WikiNote, verdict?: st
     lines.push('', 'Next? Reply yes.')
   } else {
     const how = card.choices?.length === 2 ? 'Reply true or false' : card.choices ? 'Reply with a letter' : 'Reply with your guess'
-    lines.push('', `${how}, "answer" to reveal it, or "next" to skip.`)
+    const more = hintFor(card, hints.length + 1) ? ', "hint" for a clue' : ''
+    lines.push('', `${how}${more}, "answer" to reveal it, or "next" to skip.`)
   }
 
   return lines.join('\n')
@@ -261,30 +334,43 @@ async function fetchCover($: EngineInterface, card: Trivia, note?: WikiNote) {
 }
 
 async function cardReply($: EngineInterface, settings: Settings, verdict?: string): Promise<string> {
-  const { card } = await cardAt($, await read($, index))
+  const card = await currentCard($)
   const revealed = await read($, isRevealed)
+  const used = await read($, hintsUsed)
+  const hints = Array.from({ length: used }, (_, i) => hintFor(card, i + 1)).filter((h): h is string => !!h)
   if (settings.isWebOn && card.source !== 'web') await lookUpWikipedia($, card)
-  const note = (await read($, wiki))[wikiKey(card)] ?? undefined
+  const note = card.source === 'web' ? undefined : (await read($, wiki))[wikiKey(card)] ?? undefined
   if (isCoverShown(card, revealed)) await fetchCover($, card, note)
   await update($, awaiting, () => (revealed ? 'next' : 'answer'))
 
-  return cardText(card, revealed, note, verdict)
+  // Every card ends with the score; a scored answer already leads with it.
+  const total = verdict?.includes('🏆') ? '' : `\n\n${scoreLine(await read($, score))}`
+
+  return cardText(card, revealed, note, verdict, hints) + total
 }
 
 // Scores a guess at the open card, once: a card already answered scores nothing.
 async function judge($: EngineInterface, settings: Settings, guess: string): Promise<string | undefined> {
   if (!guess || (await read($, isRevealed))) return undefined
-  const { card } = await cardAt($, await read($, index))
+  const card = await currentCard($)
   if (!card.answer) return undefined
-  const isRight = isRightGuess(card, guess)
+  const grade = gradeGuess(card, guess)
+  // A hint halves what a right answer earns.
+  const reward = (await read($, hintsUsed)) > 0 ? settings.pointsRightWithHint : settings.pointsRight
+  const change = grade === 'right' ? reward : grade === 'close' ? -settings.pointsClose : -settings.pointsWrong
   const now = await update($, score, s => ({
-    points: s.points + (isRight ? settings.pointsRight : -settings.pointsWrong),
-    right: s.right + (isRight ? 1 : 0),
-    wrong: s.wrong + (isRight ? 0 : 1),
-    streak: isRight ? s.streak + 1 : 0,
+    points: s.points + change,
+    right: s.right + (grade === 'right' ? 1 : 0),
+    close: (s.close ?? 0) + (grade === 'close' ? 1 : 0),
+    wrong: s.wrong + (grade === 'wrong' ? 1 : 0),
+    streak: grade === 'right' ? s.streak + 1 : 0,
   }))
   await $.store.set('score', now)
-  const head = isRight ? `✅ Right! +${settings.pointsRight}` : `❌ Not quite: "${guess}". −${settings.pointsWrong}`
+  const head = grade === 'right'
+    ? `✅ Right! +${reward}`
+    : grade === 'close'
+      ? `🤏 Close: "${guess}". −${settings.pointsClose}`
+      : `❌ Not quite: "${guess}". −${settings.pointsWrong}`
 
   return `${head}\n${scoreLine(now)}`
 }
@@ -309,11 +395,21 @@ const YES = /^(y|ya|yes|yeah|yep|yup|sure|ok|okay|next|another|more|go)[.!]*$/i
 const REVEAL = /^(answer|reveal|tell me|idk|i don'?t know|don'?t know|dunno|no idea|give up|pass)[.!]*$/i
 
 const SKIP = /^(next|skip)[.!]*$/i
+const RESTART = /^(restart|reset|new game|start over|start again|play again)( (the )?(trivia|game))?[.!]*$/i
+const RESTART_ANYTIME = /^(restart|reset|new|start) (the )?trivia( game)?[.!]*$/i
+
+const HINT = /^(hint|clue|help|give me a hint|a hint)[.!]*$/i
+const TUNE = /^(tune|name that tune|play a song|another tune|play (me )?a tune|song)[.!]*$/i
+
+type TriviaReply = { command: 'next' | 'answer' | 'trivia' | 'hint' | 'tune'; args: string }
 
 // A short reply right after a card is about the card, not a prompt for Claude.
 // While a question is open, anything short that is not a question to Claude is a guess.
-function triviaReplyTo(text: string, state: 'answer' | 'next' | 'none'): { command: 'next' | 'answer'; args: string } | undefined {
+function triviaReplyTo(text: string, state: 'answer' | 'next' | 'none'): TriviaReply | undefined {
   const reply = text.trim().replace(/[‘’]/g, "'")
+  if (RESTART_ANYTIME.test(reply) || (state !== 'none' && RESTART.test(reply))) return { command: 'trivia', args: 'restart' }
+  if (/^name that tune[.!]*$/i.test(reply) || (state !== 'none' && TUNE.test(reply))) return { command: 'tune', args: '' }
+  if (state === 'answer' && HINT.test(reply)) return { command: 'hint', args: '' }
   if (state === 'none' || !reply || reply.length > 40 || reply.startsWith('/')) return undefined
   if (state === 'next') return YES.test(reply) ? { command: 'next', args: '' } : undefined
   if (SKIP.test(reply)) return { command: 'next', args: '' }
@@ -322,23 +418,122 @@ function triviaReplyTo(text: string, state: 'answer' | 'next' | 'none'): { comma
   return { command: 'answer', args: reply }
 }
 
+async function giveHint($: EngineInterface, settings: Settings): Promise<string> {
+  const card = await currentCard($)
+  const used = await read($, hintsUsed)
+  if (await read($, isRevealed)) return cardReply($, settings, 'The answer is already out. Reply yes for the next one.')
+  if (used >= MAX_HINTS || !hintFor(card, used + 1)) return cardReply($, settings, 'No more hints for this one.')
+  await update($, hintsUsed, n => n + 1)
+
+  return cardReply($, settings, `💡 Hint: a right answer now earns ${settings.pointsRightWithHint} instead of ${settings.pointsRight}.`)
+}
+
+// A Name That Tune round: a 30-second iTunes preview of a song by an artist from the deck.
+async function startTune($: EngineInterface, settings: Settings): Promise<string> {
+  const mine = await read($, fromDiscogs)
+  const all = mine.length ? mine : DECK
+  const filter = parseFilter(await read($, filterText))
+  const pool = filter ? all.filter(c => matchesFilter(c, filter)) : all
+  const albums = pool.length ? pool : all
+  const seed = Math.floor(await $.clock.now())
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const album = albums[(seed + attempt * 7919) % albums.length]!
+    for (const term of [`${album.artist} ${album.album}`, album.artist]) {
+      try {
+        const res = await $.http.fetch(itunesSearchUrl(term), { headers: { 'User-Agent': USER_AGENT } })
+        if (!res.ok) continue
+        const songs = (JSON.parse(res.text) as { results?: ItunesSong[] }).results ?? []
+        const card = tuneCard(songs, album.artist, seed + attempt)
+        if (!card) continue
+        await freshCard($)
+        await update($, special, () => card)
+        return cardReply($, settings)
+      } catch {
+        // Try the next search.
+      }
+    }
+  }
+
+  return 'Couldn\'t find a song to play just now. Try again in a moment.'
+}
+
+async function setFilter($: EngineInterface, settings: Settings, text: string): Promise<string> {
+  if (/^(all|everything|any|clear|none|off)$/i.test(text)) {
+    await update($, filterText, () => '')
+    await $.store.set('filter', '')
+    await nextCard($, settings)
+    return cardReply($, settings, '🎚️ Playing everything again.')
+  }
+  const filter: Filter | undefined = parseFilter(text)
+  if (!filter) return 'Try a decade like /trivia 80s, or a genre like /trivia hip hop. /trivia all plays everything.'
+  const mine = await read($, fromDiscogs)
+  const count = (mine.length ? mine : DECK).filter(c => matchesFilter(c, filter)).length
+  if (!count) return `No ${describeFilter(filter)} in the deck. Try another decade or genre, or /trivia all.`
+  await update($, filterText, () => text)
+  await $.store.set('filter', text)
+  await nextCard($, settings)
+
+  return cardReply($, settings, `🎚️ Now playing ${describeFilter(filter)} (${count} of them). /trivia all plays everything.`)
+}
+
+// What /trivia, /answer and /next do, shared with replies typed in the chat.
+async function runTrivia($: EngineInterface, settings: Settings, reply: TriviaReply): Promise<string> {
+  const action = reply.args.trim()
+  if (reply.command === 'next' || (reply.command === 'trivia' && action.toLowerCase() === 'next')) {
+    await nextCard($, settings)
+    return cardReply($, settings)
+  }
+  if (reply.command === 'answer' || (reply.command === 'trivia' && /^(answer|reveal)$/i.test(action))) {
+    const verdict = reply.command === 'answer' ? await judge($, settings, action) : undefined
+    await update($, isRevealed, () => true)
+    return cardReply($, settings, verdict)
+  }
+  if (reply.command === 'trivia' && action.toLowerCase() === 'restart') {
+    await update($, score, () => ZERO)
+    await $.store.set('score', ZERO)
+    const now = await $.clock.now()
+    await freshCard($)
+    await update($, index, () => now % 1000)
+    return cardReply($, settings, '🔄 New game!')
+  }
+  if (reply.command === 'hint') return giveHint($, settings)
+  if (reply.command === 'tune') return startTune($, settings)
+  if (reply.command === 'trivia' && action) return setFilter($, settings, action)
+
+  return cardReply($, settings)
+}
+
 export const register: Register = (on, options) => {
   const settings: Settings = {
     username: String(options.discogsUsername ?? '').trim(),
     token: String(options.discogsToken ?? '').trim(),
     isWebOn: options.webTrivia !== false,
     pointsRight: Math.max(0, Number(options.pointsRight ?? 10)),
+    pointsClose: Math.max(0, Number(options.pointsClose ?? 2)),
     pointsWrong: Math.max(0, Number(options.pointsWrong ?? 5)),
+    pointsRightWithHint: Math.max(0, Number(options.pointsRightWithHint ?? 5)),
   }
   const halfMs = Math.max(5, Number(options.rotateSeconds ?? 20)) * 500
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'trivia',
-      description: 'Show a record trivia card (answer, next, pane)',
-      argumentHint: '[answer|next|pane]',
+      description: 'Show a record trivia card, or pick a decade or genre',
+      argumentHint: '[80s|hip hop|all|restart|pane]',
       immediate: true,
     })
+    await $.command.register({
+      name: 'hint',
+      description: 'Get a hint for the current trivia card',
+      immediate: true,
+    })
+    await $.command.register({
+      name: 'tune',
+      description: 'Name that tune: guess a song from a 30-second preview',
+      immediate: true,
+    })
+    const savedFilter = (await $.store.get('filter')) as string | undefined
+    if (typeof savedFilter === 'string') await update($, filterText, () => savedFilter)
     await $.command.register({
       name: 'answer',
       description: 'Reveal the answer to the current trivia card',
@@ -359,20 +554,23 @@ export const register: Register = (on, options) => {
     })
     const now = await $.clock.now()
     await update($, index, () => now % 1000)
+    await update($, bandIndex, () => (now + 500) % 1000)
     void (async () => {
       await pullWebQuiz($, settings)
+      await pullApple($, settings, 3)
       await syncCollection($, settings)
       await prepareAt($, settings, await read($, index))
     })()
     $.clock.every(SYNC_MS, () => {
       void syncCollection($, settings)
       void pullWebQuiz($, settings)
+      void pullApple($, settings, 2)
     })
     // Flip the card to its answer, then advance, on a steady beat.
     $.clock.every(halfMs, () => {
       void (async () => {
-        if (await read($, isRevealed)) await nextCard($, settings)
-        else await update($, isRevealed, () => true)
+        if (await read($, isBandRevealed)) await nextBandCard($, settings)
+        else await update($, isBandRevealed, () => true)
       })()
     })
 
@@ -387,37 +585,40 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     await update($, awaiting, () => 'none')
-    $.command.run(reply).catch(() => undefined)
+    // A command cannot run from inside this hook, so it runs a moment later, on its own.
+    $.clock.after(20, () => {
+      $.command.run(reply).catch(async () => {
+        const text = await runTrivia($, settings, reply)
+        await $.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } }).catch(() => undefined)
+      })
+    })
 
-    return { drop: reply.command === 'next' ? '▶ Next record' : reply.args ? `▶ Your guess: ${reply.args}` : '▶ The answer' }
+    const said = reply.command === 'next' ? '▶ Next record'
+      : reply.command === 'trivia' ? '▶ New game'
+        : reply.command === 'hint' ? '▶ Hint'
+          : reply.command === 'tune' ? '▶ Name that tune'
+            : reply.args ? `▶ Your guess: ${reply.args}` : '▶ The answer'
+    return { drop: said }
   }).catch(($, e, next) => next(e))
 
   // A fresh card each time Claude starts working.
   on('turn.start', async ($, e, next) => {
-    await nextCard($, settings)
+    await nextBandCard($, settings)
 
     return next(e)
   })
 
   // Prints the card into the chat, so it reads the same on a phone as in a terminal.
   on('command.run', { command: 'trivia' }, async ($, e) => {
-    const action = e.args.trim().toLowerCase()
-    if (action === 'pane') {
+    if (e.args.trim().toLowerCase() === 'pane') {
       await $.ui.open({ id: PANE, title: 'Record trivia' })
       return { text: 'Record trivia pane opened.' }
     }
-    if (action === 'next') await nextCard($, settings)
-    if (action === 'answer' || action === 'reveal') await update($, isRevealed, () => true)
 
-    return { text: await cardReply($, settings) }
+    return { text: await runTrivia($, settings, { command: 'trivia', args: e.args }) }
   })
 
-  on('command.run', { command: 'answer' }, async ($, e) => {
-    const verdict = await judge($, settings, e.args.trim())
-    await update($, isRevealed, () => true)
-
-    return { text: await cardReply($, settings, verdict) }
-  })
+  on('command.run', { command: 'answer' }, async ($, e) => ({ text: await runTrivia($, settings, { command: 'answer', args: e.args }) }))
 
   on('command.run', { command: 'score' }, async ($, e) => {
     if (e.args.trim().toLowerCase() === 'reset') {
@@ -426,33 +627,35 @@ export const register: Register = (on, options) => {
       return { text: '🏆 Score reset to 0.' }
     }
 
-    return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer, −${settings.pointsWrong} for a wrong one. /score reset starts over.` }
+    return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer (+${settings.pointsRightWithHint} after a hint), −${settings.pointsClose} for a close one, −${settings.pointsWrong} for a wrong one. Reply "restart trivia" to start over.` }
   })
 
-  on('command.run', { command: 'next' }, async $ => {
-    await nextCard($, settings)
+  on('command.run', { command: 'next' }, async $ => ({ text: await runTrivia($, settings, { command: 'next', args: '' }) }))
 
-    return { text: await cardReply($, settings) }
-  })
+  on('command.run', { command: 'hint' }, async $ => ({ text: await runTrivia($, settings, { command: 'hint', args: '' }) }))
+
+  on('command.run', { command: 'tune' }, async $ => ({ text: await runTrivia($, settings, { command: 'tune', args: '' }) }))
 
   // Draws the card's row in the chat with its cover where the surface draws SVG (the apps).
   on('ui.render', { component: 'CommandOutput', props: { command: 'trivia' } }, ($, e, next) => drawCardRow($, e, next))
   on('ui.render', { component: 'CommandOutput', props: { command: 'answer' } }, ($, e, next) => drawCardRow($, e, next))
   on('ui.render', { component: 'CommandOutput', props: { command: 'next' } }, ($, e, next) => drawCardRow($, e, next))
+  on('ui.render', { component: 'CommandOutput', props: { command: 'hint' } }, ($, e, next) => drawCardRow($, e, next))
+  on('ui.render', { component: 'CommandOutput', props: { command: 'tune' } }, ($, e, next) => drawCardRow($, e, next))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || !e.props.isWorking) return next(e)
     const { Box, Text } = $.ui.resolve(e)
-    const { card } = await cardAt($, await read($, index))
-    const revealed = await read($, isRevealed)
+    const { card } = await cardAt($, await read($, bandIndex))
+    const revealed = await read($, isBandRevealed)
     const note = (await read($, wiki))[wikiKey(card)]
 
     return (
       <Box flexDirection="column">
         <Text>
           <Text color="magenta">◉ </Text>
-          <Text bold>{card.album}</Text>
-          {card.artist ? <Text dimColor> — {card.artist}{yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}</Text> : null}
+          <Text bold>{headingOf(card, revealed).album}</Text>
+          {headingOf(card, revealed).artist ? <Text dimColor> — {headingOf(card, revealed).artist}{yearOf(card, revealed) ? ` (${yearOf(card, revealed)})` : ''}</Text> : null}
         </Text>
         {card.question ? (
           <Text>
@@ -470,12 +673,13 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link } = $.ui.resolve(e)
-    const { card, total } = await cardAt($, await read($, index))
+    const { total } = await cardAt($, await read($, index))
+    const card = await currentCard($)
     const revealed = await read($, isRevealed)
     const status = await read($, discogsStatus)
     const quizCount = (await read($, fromWeb)).length
     const note = (await read($, wiki))[wikiKey(card)]
-    const label = card.album.slice(0, 9).toUpperCase().padEnd(9)
+    const label = headingOf(card, revealed).album.replace(/^\W+/, '').slice(0, 9).toUpperCase().padEnd(9)
 
     return (
       <Box flexDirection="column">
@@ -492,8 +696,8 @@ export const register: Register = (on, options) => {
             <Text color="gray">  ▀▀█████▀▀  </Text>
           </Box>
           <Box flexDirection="column">
-            <Text bold>{card.album}</Text>
-            <Text>{card.artist}</Text>
+            <Text bold>{headingOf(card, revealed).album}</Text>
+            <Text>{headingOf(card, revealed).artist}</Text>
             {yearOf(card, revealed) ? <Text dimColor>{String(yearOf(card, revealed))}</Text> : null}
             {card.url ? <Link href={card.url} label="View on Discogs" /> : null}
             {note ? <Link href={note.url} label="Read on Wikipedia" /> : null}

@@ -28,13 +28,6 @@
       "default": true,
       "required": false
     },
-    "rotateSeconds": {
-      "type": "number",
-      "title": "Seconds per card",
-      "description": "How long each trivia card shows before the next one (the answer is revealed halfway).",
-      "default": 20,
-      "required": false
-    },
     "pointsRight": {
       "type": "number",
       "title": "Points for a right answer",
@@ -47,6 +40,27 @@
       "title": "Points off for a wrong answer",
       "description": "Taken off your score for each wrong guess.",
       "default": 5,
+      "required": false
+    },
+    "pointsClose": {
+      "type": "number",
+      "title": "Points off for a close answer",
+      "description": "Taken off instead of the full amount when a guess is close (a year off by one, a near spelling, part of the answer).",
+      "default": 2,
+      "required": false
+    },
+    "pointsRightWithHint": {
+      "type": "number",
+      "title": "Points for a right answer after a hint",
+      "description": "Earned instead of the full amount when you asked for a hint first.",
+      "default": 5,
+      "required": false
+    },
+    "rotateSeconds": {
+      "type": "number",
+      "title": "Seconds per card",
+      "description": "How long each trivia card shows before the next one (the answer is revealed halfway).",
+      "default": 20,
       "required": false
     }
   }

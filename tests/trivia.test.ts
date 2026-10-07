@@ -1,9 +1,13 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
+import { appleCards, cleanAlbum, peersOf } from '../hooks/apple-quiz'
 import * as covers from '../hooks/covers'
 import * as deckModule from '../hooks/deck'
-import { isRightGuess } from '../hooks/guess'
+import { matchesFilter, parseFilter } from '../hooks/filter'
+import { gradeGuess, isRightGuess } from '../hooks/guess'
+import { hintFor } from '../hooks/hints'
+import { cleanTrackName, tuneCard } from '../hooks/tune'
 import { addDistractors, formatFor, varyCard } from '../hooks/variety'
 import { cardsFromOpenTdb, noteFromSummary, wikiCandidates } from '../hooks/web'
 
@@ -132,6 +136,7 @@ test('keeps a Wikipedia summary only when it is the right album', async () => {
 test('/trivia prints the card in the chat, then the answer', async $ => {
   const shown = await $.command.run({ command: 'trivia', args: '' })
   expect(shown?.text).toContain('Q:')
+  expect(shown?.text).toContain('🏆 Score:')
   expect(shown?.text).toContain('"answer"')
   const answered = await $.command.run({ command: 'answer', args: '' })
   expect(answered?.text).toContain('Next? Reply yes.')
@@ -261,4 +266,145 @@ test('quiz questions come from Open Trivia DB with a token and mix in every othe
   const quizCards = seen.filter(t => t.includes('Quiz question'))
   expect(quizCards.length).toBe(4)
   expect(urls.some(u => u.includes('&token=tok'))).toBe(true)
+})
+
+test('a typed guess is scored and answered a moment later', async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  await $.command.run({ command: 'score', args: 'reset' })
+  await $.command.run({ command: 'trivia', args: '' })
+  expect(await $.prompt.submit({ text: 'Piano man', wait: false })).toEqual({ drop: '▶ Your guess: Piano man' })
+  await clock.advance(100)
+  expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: -5 (0 right, 1 wrong)')
+})
+
+test('"restart trivia" starts a new game with the score at 0', async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  await $.command.run({ command: 'trivia', args: '' })
+  await $.command.run({ command: 'answer', args: 'wrong guess' })
+  expect(await $.prompt.submit({ text: 'Restart trivia', wait: false })).toEqual({ drop: '▶ New game' })
+  await clock.advance(100)
+  expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: 0 (0 right, 0 wrong)')
+  const fresh = await $.command.run({ command: 'trivia', args: 'restart' })
+  expect(fresh?.text).toContain('🔄 New game!')
+  expect(fresh?.text).toContain('🏆 Score: 0 (0 right, 0 wrong)')
+})
+
+test('close guesses are told apart from wrong ones', async () => {
+  const card = (answer: string, choices?: string[]) => ({ album: 'x', artist: 'y', answer, choices, source: 'deck' as const })
+  expect(gradeGuess(card("Don't Stop"), "Don't stop believing")).toBe('close')
+  expect(gradeGuess(card('1987'), '1986')).toBe('close')
+  expect(gradeGuess(card('1987'), '1980')).toBe('wrong')
+  expect(gradeGuess(card('Stairway to Heaven'), 'Stairway')).toBe('close')
+  expect(gradeGuess(card('Stairway to Heaven'), 'Piano man')).toBe('wrong')
+  expect(gradeGuess(card('Ladysmith Black Mambazo'), 'Ladysmith Mambazzo')).toBe('right')
+  expect(gradeGuess(card('Ladysmith Black Mambazo'), 'Black')).toBe('close')
+  expect(gradeGuess(card('Paul McCartney'), 'Paul')).toBe('close')
+  expect(gradeGuess(card('Matt Bellamy', ['Dominic Howard', 'Matt Bellamy']), 'Matt Bellami')).toBe('right')
+  expect(gradeGuess(card('Matt Bellamy', ['Dominic Howard', 'Matt Bellamy']), 'Matt')).toBe('wrong')
+  expect(gradeGuess(card('Paul McCartney'), 'mccartney')).toBe('right')
+})
+
+test('hints give away a little more each time', async () => {
+  const card = (answer: string, choices?: string[]) => ({ album: 'x', artist: 'y', answer, choices, source: 'deck' as const })
+  expect(hintFor(card('Stairway to Heaven'), 1)).toBe('3 words, starting with "S".')
+  expect(hintFor(card('Stairway to Heaven'), 2)).toBe('S_______ t_ H_____')
+  expect(hintFor(card('1987'), 1)).toBe("It's in the 1980s.")
+  expect(hintFor(card('1987'), 2)).toBe('It ends in 7.')
+  expect(hintFor(card('1987'), 3)).toBeUndefined()
+  expect(hintFor(card('B', ['A', 'B', 'C', 'D']), 1)).toContain('50/50')
+  expect(hintFor(card('True', ['True', 'False']), 1)).toBeUndefined()
+})
+
+test('filters pick a decade or a genre', async () => {
+  const album = { album: 'x', artist: 'y', year: 1987, genres: ['Hip Hop', 'Rap'], source: 'deck' as const }
+  expect(parseFilter('80s')).toEqual({ kind: 'decade', from: 1980, label: '1980s' })
+  expect(parseFilter("'90s")).toEqual({ kind: 'decade', from: 1990, label: '1990s' })
+  expect(parseFilter('00s')).toEqual({ kind: 'decade', from: 2000, label: '2000s' })
+  expect(matchesFilter(album, parseFilter('80s')!)).toBe(true)
+  expect(matchesFilter(album, parseFilter('1970s')!)).toBe(false)
+  expect(matchesFilter(album, parseFilter('hip-hop')!)).toBe(true)
+  expect(matchesFilter(album, parseFilter('jazz')!)).toBe(false)
+  expect(deckModule.DECK.every(c => c.genres?.length)).toBe(true)
+})
+
+test('Name That Tune keeps the artist\'s own songs and cleans titles', async () => {
+  expect(cleanTrackName('Dreams (2004 Remaster)')).toBe('Dreams')
+  expect(cleanTrackName('Rocks Off - Remastered 2010')).toBe('Rocks Off')
+  const card = tuneCard([
+    { trackName: 'Dreams (Karaoke Version)', artistName: 'Karaoke Kings', previewUrl: 'https://a/1.m4a' },
+    { trackName: 'Dreams (2004 Remaster)', artistName: 'Fleetwood Mac', collectionName: 'Rumours', releaseDate: '1977-02-04', previewUrl: 'https://a/2.m4a', artworkUrl100: 'https://img/100x100bb.jpg' },
+  ], 'Fleetwood Mac', 0)
+  expect(card?.answer).toBe('Dreams')
+  expect(card?.question).toContain('https://a/2.m4a')
+  expect(card?.coverUrl).toBe('https://img/300x300bb.jpg')
+  expect(card?.isCoverHidden).toBe(true)
+})
+
+test('a hint costs a point, and /trivia 80s plays only 80s albums', async ($, on) => {
+  mock.store(on)
+  await $.command.run({ command: 'score', args: 'reset' })
+  const filtered = await $.command.run({ command: 'trivia', args: '80s' })
+  expect(filtered?.text).toContain('Now playing albums from the 1980s')
+  for (let i = 0; i < 6; i++) {
+    const text = (await $.command.run({ command: 'next', args: '' }))?.text ?? ''
+    const year = Number(/\((\d{4})\)/.exec(text)?.[1] ?? '1985')
+    expect(year >= 1980 && year < 1990).toBe(true)
+  }
+  const hinted = await $.command.run({ command: 'hint', args: '' })
+  expect(hinted?.text).toContain('💡')
+  expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: 0 (0 right')
+  expect((await $.command.run({ command: 'trivia', args: 'all' }))?.text).toContain('Playing everything again')
+})
+
+test('/tune plays a preview and takes a guess at the song', async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: 12345 })
+  // The search answers with a song by whichever artist it was asked about.
+  on('http.fetch', (_$, e) => {
+    const term = decodeURIComponent(/term=([^&]+)/.exec(e.url)?.[1] ?? '')
+    const songs = e.url.includes('itunes.apple.com')
+      ? [{ trackName: 'Test Song (Remastered)', artistName: term, collectionName: 'An Album', releaseDate: '1972-05-12', previewUrl: 'https://p/song.m4a' }]
+      : []
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ results: songs }) } }
+  })
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  const shown = (await $.command.run({ command: 'tune', args: '' }))?.text ?? ''
+  expect(shown).toContain('🎧 Name that tune!')
+  expect(shown).toContain('https://p/song.m4a')
+  expect(shown).not.toContain('Test Song')
+  const hinted = (await $.command.run({ command: 'hint', args: '' }))?.text ?? ''
+  expect(hinted).toContain("Hint 1: It's by")
+  const answered = (await $.command.run({ command: 'answer', args: 'test song' }))?.text ?? ''
+  expect(answered).toContain('✅ Right! +5')
+  expect(answered).toContain('"Test Song" by')
+  // The next card goes back to the rotation.
+  expect((await $.command.run({ command: 'next', args: '' }))?.text).not.toContain('Name that tune')
+})
+
+test('Apple Music data makes album, artist and tracklist questions', async () => {
+  const song = (trackName: string, collectionName: string, artistName = 'Fleetwood Mac') => ({ trackName, collectionName, artistName, collectionArtistName: artistName, primaryGenreName: 'Rock' })
+  const results = [
+    song('Dreams', 'Rumours (Super Deluxe Edition)'), song('Go Your Own Way', 'Rumours'), song('The Chain', 'Rumours'),
+    song('Tusk', 'Tusk'), song('Sara', 'Tusk'), song('Big Love', 'Tango in the Night'), song('Little Lies', 'Tango in the Night'),
+    song('Rhiannon', 'Fleetwood Mac'), song('Landslide', 'Fleetwood Mac'), song('Albatross', 'Then Play On'),
+    song('Dreams', 'Greatest Hits'), song('Dreams (Karaoke)', 'Karaoke Hits', 'Karaoke Kings'),
+  ]
+  const cards = appleCards(results, 'Fleetwood Mac', peersOf('Fleetwood Mac'))
+  expect(cleanAlbum('Rumours (Super Deluxe Edition)')).toBe('Rumours')
+  expect(cleanAlbum('Red (Taylor\'s Version) [+ A Message from Taylor]')).toBe('Red')
+  const album = cards.find(c => c.kind === 'apple-album' && c.question?.includes('"Dreams"'))
+  if (album) {
+    expect(album.answer).toBe('Rumours')
+    expect(album.wrong).not.toContain('Greatest Hits')
+    expect(album.isHeaderHidden).toBe(true)
+  }
+  expect(cards.some(c => c.kind === 'apple-artist')).toBe(true)
+  // "Rhiannon" is on the self-titled album, which would give the artist away.
+  expect(cards.some(c => c.kind === 'apple-artist' && c.question?.includes('"Rhiannon"'))).toBe(false)
+  for (const c of cards) expect(c.choices ? c.choices.includes(c.answer!) : (c.wrong ?? []).every(w => w !== c.answer)).toBe(true)
+  expect(peersOf('Nas')).toContain('Jay-Z')
 })

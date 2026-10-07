@@ -42,6 +42,40 @@ function acceptedAnswers(answer: string): string[] {
 }
 
 export function isRightGuess(card: Trivia, rawGuess: string): boolean {
+  return gradeGuess(card, rawGuess) === 'right'
+}
+
+export type Grade = 'right' | 'close' | 'wrong'
+
+// Close: a number off by one, a guess that holds the answer or shares its key words, or a near spelling.
+function isClose(guess: string, answers: string[], answerNumber: string): boolean {
+  if (/^\d+$/.test(answerNumber)) {
+    const n = Number(guess.replace(/ /g, ''))
+    return Number.isFinite(n) && Math.abs(n - Number(answerNumber)) === 1
+  }
+  const guessWords = guess.split(' ').filter(w => w.length >= 3)
+  for (const answer of answers) {
+    if (answer.length >= 3 && (guess.includes(answer) || answer.includes(guess))) return true
+    const answerWords = answer.split(' ').filter(w => w.length >= 3)
+    const shared = answerWords.filter(a => guessWords.some(g => closeEnough(g, a)))
+    if (answerWords.length && shared.length * 2 >= answerWords.length && shared.some(w => w.length >= 4)) return true
+    if (answer.length >= 6 && distance(guess, answer) <= Math.ceil(answer.length * 0.3)) return true
+  }
+  return false
+}
+
+export function gradeGuess(card: Trivia, rawGuess: string): Grade {
+  const isRight = rightGuess(card, rawGuess)
+  if (isRight || !card.answer || !rawGuess.trim()) return isRight ? 'right' : 'wrong'
+  // Picking among choices is right or wrong, never close.
+  if (card.choices) return 'wrong'
+  const guess = normalize(rawGuess)
+  if (!guess) return 'wrong'
+
+  return isClose(guess, acceptedAnswers(card.answer), card.answer.replace(/,/g, '')) ? 'close' : 'wrong'
+}
+
+function rightGuess(card: Trivia, rawGuess: string): boolean {
   if (!card.answer) return false
   const trimmed = rawGuess.trim()
 
@@ -65,11 +99,14 @@ export function isRightGuess(card: Trivia, rawGuess: string): boolean {
 
   for (const answer of acceptedAnswers(card.answer)) {
     if (closeEnough(guess, answer)) return true
-    // "McCartney" for "Paul McCartney": every guessed word is in the answer, one of them a real name.
+    // "McCartney" for "Paul McCartney": every guessed word is in the answer, and they cover
+    // its last word or most of it ("Paul" alone, or "Stairway", is only close).
     const answerWords = answer.split(' ')
     const guessWords = guess.split(' ')
     const matches = guessWords.every(g => answerWords.some(a => closeEnough(g, a)))
-    if (matches && guessWords.some(g => g.length >= 4)) return true
+    const coversLast = guessWords.some(g => closeEnough(g, answerWords[answerWords.length - 1]!))
+    const coversMost = guessWords.length * 2 > answerWords.length
+    if (matches && guessWords.some(g => g.length >= 4) && (coversLast || coversMost)) return true
   }
   return false
 }
