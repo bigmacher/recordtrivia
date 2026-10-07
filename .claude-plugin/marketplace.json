@@ -1,7 +1,8 @@
 {
   "name": "recordtrivia",
   "owner": {
-    "name": "bigmacher"
+    "name": "bigmacher",
+    "email": "jeff@jeffisfunny.com"
   },
   "description": "Record Trivia: music trivia for Claude Code.",
   "plugins": [

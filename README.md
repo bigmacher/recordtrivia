@@ -10,6 +10,10 @@ Music trivia for people who spend their day in Claude Code. There are three sepa
 
 1 and 2 come together in one Claude Code mod. 3 is a web page you open from a link.
 
+> **THIS IS FOR FUN. IF SOMETHING IS WRONG - SORRY - ENTERTAINMENT PURPOSES ONLY.**
+>
+> Questions are written by hand or built automatically from public music data, and some answers may be out of date or just plain wrong.
+
 ## Install the mod
 
 You need [Claude Code](https://claude.com/claude-code) running in a terminal. The Claude desktop app's Code tab and the phone app can't install mods.

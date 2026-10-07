@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- A for-fun disclaimer in the README, in `/score`, and on the web game.
+- Contact email jeff@jeffisfunny.com in the mod and marketplace files.
+
 ## 0.5.0
 
 - MIT license, plus `license`, `homepage`, `repository` and `keywords` in `plugin.json`.

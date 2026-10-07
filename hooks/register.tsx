@@ -624,7 +624,7 @@ export const register: Register = (on, options) => {
       return { text: '🏆 Score reset to 0.' }
     }
 
-    return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer (+${settings.pointsRightWithHint} after a hint), −${settings.pointsClose} for a close one, −${settings.pointsWrong} for a wrong one. Reply "restart trivia" to start over.` }
+    return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer (+${settings.pointsRightWithHint} after a hint), −${settings.pointsClose} for a close one, −${settings.pointsWrong} for a wrong one. Reply "restart trivia" to start over.\n\nThis is for fun. If something is wrong, sorry. Entertainment purposes only.` }
   })
 
   on('command.run', { command: 'next' }, async $ => ({ text: await runTrivia($, settings, { command: 'next', args: '' }) }))
