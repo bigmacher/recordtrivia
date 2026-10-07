@@ -49,6 +49,13 @@
       "default": 2,
       "required": false
     },
+    "pointsHint": {
+      "type": "number",
+      "title": "Points off for a hint",
+      "description": "Taken off for each hint you ask for (two per card at most).",
+      "default": 1,
+      "required": false
+    },
     "rotateSeconds": {
       "type": "number",
       "title": "Seconds per card",

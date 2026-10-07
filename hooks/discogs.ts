@@ -79,6 +79,7 @@ export function cardFromCollection(info: BasicInformation, dateAdded?: string): 
     answer: ask?.answer,
     kind: ask?.kind,
     isYearHidden: ask?.kind === 'year',
+    genres: styles,
     source: 'discogs',
     releaseId: info.id,
     url: `https://www.discogs.com/release/${info.id}`,

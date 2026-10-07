@@ -3,7 +3,10 @@ import { expect, mock, test } from 'claude-code/testing'
 import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
 import * as covers from '../hooks/covers'
 import * as deckModule from '../hooks/deck'
+import { matchesFilter, parseFilter } from '../hooks/filter'
 import { gradeGuess, isRightGuess } from '../hooks/guess'
+import { hintFor } from '../hooks/hints'
+import { cleanTrackName, tuneCard } from '../hooks/tune'
 import { addDistractors, formatFor, varyCard } from '../hooks/variety'
 import { cardsFromOpenTdb, noteFromSummary, wikiCandidates } from '../hooks/web'
 
@@ -302,4 +305,81 @@ test('close guesses are told apart from wrong ones', async () => {
   expect(gradeGuess(card('Matt Bellamy', ['Dominic Howard', 'Matt Bellamy']), 'Matt Bellami')).toBe('right')
   expect(gradeGuess(card('Matt Bellamy', ['Dominic Howard', 'Matt Bellamy']), 'Matt')).toBe('wrong')
   expect(gradeGuess(card('Paul McCartney'), 'mccartney')).toBe('right')
+})
+
+test('hints give away a little more each time', async () => {
+  const card = (answer: string, choices?: string[]) => ({ album: 'x', artist: 'y', answer, choices, source: 'deck' as const })
+  expect(hintFor(card('Stairway to Heaven'), 1)).toBe('3 words, starting with "S".')
+  expect(hintFor(card('Stairway to Heaven'), 2)).toBe('S_______ t_ H_____')
+  expect(hintFor(card('1987'), 1)).toBe("It's in the 1980s.")
+  expect(hintFor(card('1987'), 2)).toBe('It ends in 7.')
+  expect(hintFor(card('1987'), 3)).toBeUndefined()
+  expect(hintFor(card('B', ['A', 'B', 'C', 'D']), 1)).toContain('50/50')
+  expect(hintFor(card('True', ['True', 'False']), 1)).toBeUndefined()
+})
+
+test('filters pick a decade or a genre', async () => {
+  const album = { album: 'x', artist: 'y', year: 1987, genres: ['Hip Hop', 'Rap'], source: 'deck' as const }
+  expect(parseFilter('80s')).toEqual({ kind: 'decade', from: 1980, label: '1980s' })
+  expect(parseFilter("'90s")).toEqual({ kind: 'decade', from: 1990, label: '1990s' })
+  expect(parseFilter('00s')).toEqual({ kind: 'decade', from: 2000, label: '2000s' })
+  expect(matchesFilter(album, parseFilter('80s')!)).toBe(true)
+  expect(matchesFilter(album, parseFilter('1970s')!)).toBe(false)
+  expect(matchesFilter(album, parseFilter('hip-hop')!)).toBe(true)
+  expect(matchesFilter(album, parseFilter('jazz')!)).toBe(false)
+  expect(deckModule.DECK.every(c => c.genres?.length)).toBe(true)
+})
+
+test('Name That Tune keeps the artist\'s own songs and cleans titles', async () => {
+  expect(cleanTrackName('Dreams (2004 Remaster)')).toBe('Dreams')
+  expect(cleanTrackName('Rocks Off - Remastered 2010')).toBe('Rocks Off')
+  const card = tuneCard([
+    { trackName: 'Dreams (Karaoke Version)', artistName: 'Karaoke Kings', previewUrl: 'https://a/1.m4a' },
+    { trackName: 'Dreams (2004 Remaster)', artistName: 'Fleetwood Mac', collectionName: 'Rumours', releaseDate: '1977-02-04', previewUrl: 'https://a/2.m4a', artworkUrl100: 'https://img/100x100bb.jpg' },
+  ], 'Fleetwood Mac', 0)
+  expect(card?.answer).toBe('Dreams')
+  expect(card?.question).toContain('https://a/2.m4a')
+  expect(card?.coverUrl).toBe('https://img/300x300bb.jpg')
+  expect(card?.isCoverHidden).toBe(true)
+})
+
+test('a hint costs a point, and /trivia 80s plays only 80s albums', async ($, on) => {
+  mock.store(on)
+  await $.command.run({ command: 'score', args: 'reset' })
+  const filtered = await $.command.run({ command: 'trivia', args: '80s' })
+  expect(filtered?.text).toContain('Now playing albums from the 1980s')
+  for (let i = 0; i < 6; i++) {
+    const text = (await $.command.run({ command: 'next', args: '' }))?.text ?? ''
+    const year = Number(/\((\d{4})\)/.exec(text)?.[1] ?? '1985')
+    expect(year >= 1980 && year < 1990).toBe(true)
+  }
+  const hinted = await $.command.run({ command: 'hint', args: '' })
+  expect(hinted?.text).toContain('💡')
+  expect((await $.command.run({ command: 'score', args: '' }))?.text).toMatch(/Score: -1|No more hints/)
+  expect((await $.command.run({ command: 'trivia', args: 'all' }))?.text).toContain('Playing everything again')
+})
+
+test('/tune plays a preview and takes a guess at the song', async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: 12345 })
+  // The search answers with a song by whichever artist it was asked about.
+  on('http.fetch', (_$, e) => {
+    const term = decodeURIComponent(/term=([^&]+)/.exec(e.url)?.[1] ?? '')
+    const songs = e.url.includes('itunes.apple.com')
+      ? [{ trackName: 'Test Song (Remastered)', artistName: term, collectionName: 'An Album', releaseDate: '1972-05-12', previewUrl: 'https://p/song.m4a' }]
+      : []
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ results: songs }) } }
+  })
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  const shown = (await $.command.run({ command: 'tune', args: '' }))?.text ?? ''
+  expect(shown).toContain('🎧 Name that tune!')
+  expect(shown).toContain('https://p/song.m4a')
+  expect(shown).not.toContain('Test Song')
+  const hinted = (await $.command.run({ command: 'hint', args: '' }))?.text ?? ''
+  expect(hinted).toContain("Hint 1: It's by")
+  const answered = (await $.command.run({ command: 'answer', args: 'test song' }))?.text ?? ''
+  expect(answered).toContain('✅ Right!')
+  expect(answered).toContain('"Test Song" by')
+  // The next card goes back to the rotation.
+  expect((await $.command.run({ command: 'next', args: '' }))?.text).not.toContain('Name that tune')
 })

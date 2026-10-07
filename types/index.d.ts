@@ -12,6 +12,10 @@ export type Trivia = {
   kind?: string
   // The question is about the year, so it stays hidden until the answer.
   isYearHidden?: boolean
+  // The cover would give the answer away (Name That Tune), so it waits for the answer.
+  isCoverHidden?: boolean
+  // Genres and styles, for /trivia <genre>.
+  genres?: string[]
   source: 'deck' | 'discogs' | 'web'
   releaseId?: number
   url?: string
@@ -38,6 +42,10 @@ declare module 'claude-code' {
       discogsStatus: string
       awaiting: 'answer' | 'next' | 'none'
       score: Score
+      hintsUsed: number
+      filterText: string
+      // A card that is not from the rotation (a Name That Tune round), shown until the next card.
+      special: Trivia | null
     }
   }
 }
