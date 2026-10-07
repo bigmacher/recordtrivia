@@ -1,5 +1,7 @@
 # Record Trivia
 
+[![Buy me a coffee](https://img.shields.io/badge/Buy_me_a_coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jeffdwoskinshow)
+
 Music trivia for people who spend their day in Claude Code. There are three separate things here:
 
 | | What it is | Do you answer? | Points? |
@@ -249,6 +251,10 @@ node scripts/pack-web.mjs        # writes web/record-trivia.html
 ```
 
 Then publish `web/record-trivia.html` as an artifact on claude.ai.
+
+## Support
+
+If Record Trivia makes your waiting time more fun, you can [buy me a coffee](https://buymeacoffee.com/jeffdwoskinshow). ☕
 
 ## Changes
 
