@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import { cardsFromPage, cleanName, enrichCard } from '../hooks/discogs'
 import * as covers from '../hooks/covers'
 import * as deckModule from '../hooks/deck'
-import { isRightGuess } from '../hooks/guess'
+import { gradeGuess, isRightGuess } from '../hooks/guess'
 import { addDistractors, formatFor, varyCard } from '../hooks/variety'
 import { cardsFromOpenTdb, noteFromSummary, wikiCandidates } from '../hooks/web'
 
@@ -287,4 +287,19 @@ test('"restart trivia" starts a new game with the score at 0', async ($, on) => 
   const fresh = await $.command.run({ command: 'trivia', args: 'restart' })
   expect(fresh?.text).toContain('🔄 New game!')
   expect(fresh?.text).toContain('🏆 Score: 0 (0 right, 0 wrong)')
+})
+
+test('close guesses are told apart from wrong ones', async () => {
+  const card = (answer: string, choices?: string[]) => ({ album: 'x', artist: 'y', answer, choices, source: 'deck' as const })
+  expect(gradeGuess(card("Don't Stop"), "Don't stop believing")).toBe('close')
+  expect(gradeGuess(card('1987'), '1986')).toBe('close')
+  expect(gradeGuess(card('1987'), '1980')).toBe('wrong')
+  expect(gradeGuess(card('Stairway to Heaven'), 'Stairway')).toBe('close')
+  expect(gradeGuess(card('Stairway to Heaven'), 'Piano man')).toBe('wrong')
+  expect(gradeGuess(card('Ladysmith Black Mambazo'), 'Ladysmith Mambazzo')).toBe('right')
+  expect(gradeGuess(card('Ladysmith Black Mambazo'), 'Black')).toBe('close')
+  expect(gradeGuess(card('Paul McCartney'), 'Paul')).toBe('close')
+  expect(gradeGuess(card('Matt Bellamy', ['Dominic Howard', 'Matt Bellamy']), 'Matt Bellami')).toBe('right')
+  expect(gradeGuess(card('Matt Bellamy', ['Dominic Howard', 'Matt Bellamy']), 'Matt')).toBe('wrong')
+  expect(gradeGuess(card('Paul McCartney'), 'mccartney')).toBe('right')
 })

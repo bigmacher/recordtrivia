@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderElement, RenderInput } from 'clau
 
 import type { Score, Trivia, WikiNote } from '../types'
 import { DECK } from './deck'
-import { isRightGuess } from './guess'
+import { gradeGuess } from './guess'
 import { addDistractors, varyCard } from './variety'
 import { cardsFromPage, enrichCard } from './discogs'
 import type { CollectionPage, Release } from './discogs'
@@ -27,11 +27,11 @@ const fromWeb = atom({ plugin: 'record-trivia', key: 'fromWeb' } as const, [])
 const wiki = atom({ plugin: 'record-trivia', key: 'wiki' } as const, {})
 const covers = atom({ plugin: 'record-trivia', key: 'covers' } as const, {})
 const awaiting = atom({ plugin: 'record-trivia', key: 'awaiting' } as const, 'none')
-const ZERO: Score = { points: 0, right: 0, wrong: 0, streak: 0 }
+const ZERO: Score = { points: 0, right: 0, close: 0, wrong: 0, streak: 0 }
 const score = atom({ plugin: 'record-trivia', key: 'score' } as const, ZERO)
 const discogsStatus = atom({ plugin: 'record-trivia', key: 'discogsStatus' } as const, 'not set up')
 
-type Settings = { username: string; token: string; isWebOn: boolean; pointsRight: number; pointsWrong: number }
+type Settings = { username: string; token: string; isWebOn: boolean; pointsRight: number; pointsClose: number; pointsWrong: number }
 
 function discogsHeaders(settings: Settings): Record<string, string> {
   const base = { 'User-Agent': USER_AGENT }
@@ -212,7 +212,8 @@ function yearOf(card: Trivia, revealed: boolean): number | undefined {
 
 function scoreLine(s: Score): string {
   const streak = s.streak >= 3 ? ` · 🔥 ${s.streak} in a row` : ''
-  return `🏆 Score: ${s.points} (${s.right} right, ${s.wrong} wrong)${streak}`
+  const close = s.close ? `, ${s.close} close` : ''
+  return `🏆 Score: ${s.points} (${s.right} right${close}, ${s.wrong} wrong)${streak}`
 }
 
 function cardText(card: Trivia, revealed: boolean, note?: WikiNote, verdict?: string): string {
@@ -289,15 +290,21 @@ async function judge($: EngineInterface, settings: Settings, guess: string): Pro
   if (!guess || (await read($, isRevealed))) return undefined
   const { card } = await cardAt($, await read($, index))
   if (!card.answer) return undefined
-  const isRight = isRightGuess(card, guess)
+  const grade = gradeGuess(card, guess)
+  const change = grade === 'right' ? settings.pointsRight : grade === 'close' ? -settings.pointsClose : -settings.pointsWrong
   const now = await update($, score, s => ({
-    points: s.points + (isRight ? settings.pointsRight : -settings.pointsWrong),
-    right: s.right + (isRight ? 1 : 0),
-    wrong: s.wrong + (isRight ? 0 : 1),
-    streak: isRight ? s.streak + 1 : 0,
+    points: s.points + change,
+    right: s.right + (grade === 'right' ? 1 : 0),
+    close: (s.close ?? 0) + (grade === 'close' ? 1 : 0),
+    wrong: s.wrong + (grade === 'wrong' ? 1 : 0),
+    streak: grade === 'right' ? s.streak + 1 : 0,
   }))
   await $.store.set('score', now)
-  const head = isRight ? `✅ Right! +${settings.pointsRight}` : `❌ Not quite: "${guess}". −${settings.pointsWrong}`
+  const head = grade === 'right'
+    ? `✅ Right! +${settings.pointsRight}`
+    : grade === 'close'
+      ? `🤏 Close: "${guess}". −${settings.pointsClose}`
+      : `❌ Not quite: "${guess}". −${settings.pointsWrong}`
 
   return `${head}\n${scoreLine(now)}`
 }
@@ -370,6 +377,7 @@ export const register: Register = (on, options) => {
     token: String(options.discogsToken ?? '').trim(),
     isWebOn: options.webTrivia !== false,
     pointsRight: Math.max(0, Number(options.pointsRight ?? 10)),
+    pointsClose: Math.max(0, Number(options.pointsClose ?? 2)),
     pointsWrong: Math.max(0, Number(options.pointsWrong ?? 5)),
   }
   const halfMs = Math.max(5, Number(options.rotateSeconds ?? 20)) * 500
@@ -468,7 +476,7 @@ export const register: Register = (on, options) => {
       return { text: '🏆 Score reset to 0.' }
     }
 
-    return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer, −${settings.pointsWrong} for a wrong one. /score reset starts over.` }
+    return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer, −${settings.pointsClose} for a close one, −${settings.pointsWrong} for a wrong one. Reply "restart trivia" to start over.` }
   })
 
   on('command.run', { command: 'next' }, async $ => ({ text: await runTrivia($, settings, { command: 'next', args: '' }) }))

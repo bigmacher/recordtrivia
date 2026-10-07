@@ -20,7 +20,7 @@ export type Trivia = {
   isEnriched?: boolean
 }
 
-export type Score = { points: number; right: number; wrong: number; streak: number }
+export type Score = { points: number; right: number; close: number; wrong: number; streak: number }
 
 export type WikiNote = { extract: string; url: string; imageUrl?: string }
 

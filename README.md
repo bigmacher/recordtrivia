@@ -12,7 +12,7 @@ A Claude Code mod that spins record and music trivia while Claude works.
 
 - **Just reply:** after a question, type your guess (an album name, a year, or a letter for multiple choice). Small typos are forgiven. Reply "answer" or "I don't know" to see the answer without scoring, and "next" to skip. After an answer, reply "yes" for the next record. Longer messages and questions still go to Claude.
 - **Mixed formats:** about 40% of album cards are multiple choice, 20% are true or false, and the rest take a typed answer. On a multiple-choice card reply with the letter, and on a true-or-false card reply true/false or yes/no.
-- **Running score:** +10 for a right guess, −5 for a wrong one, with a 🔥 streak after three right in a row. The score is kept between sessions. `/score` shows it. Reply "restart trivia" (or type `/trivia restart`) for a new game with the score back at 0. Change the points in `/config`.
+- **Running score:** +10 for a right guess, −2 for a close one (a year off by one, part of the answer, or a near spelling), −5 for a wrong one, with a 🔥 streak after three right in a row. The score is kept between sessions. `/score` shows it. Reply "restart trivia" (or type `/trivia restart`) for a new game with the score back at 0. Change the points in `/config`.
 
 ## Install
 
