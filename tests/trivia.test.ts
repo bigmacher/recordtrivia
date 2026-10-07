@@ -80,6 +80,7 @@ test('band shows a record only while Claude works', async ($, on) => {
       props: { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 80, scroll: SCROLL, view: {} },
     })
     expect(await busy.find({ type: 'Text', text: /Q:/ })).toBeDefined()
+    expect(await busy.find({ type: 'Text', text: /RECORD TRIVIA/ })).toBeDefined()
     await busy.unmount()
   }
 })
