@@ -378,7 +378,7 @@ test('/tune plays a preview and takes a guess at the song', async ($, on) => {
   on('http.fetch', (_$, e) => {
     const term = decodeURIComponent(/term=([^&]+)/.exec(e.url)?.[1] ?? '')
     const songs = e.url.includes('itunes.apple.com')
-      ? [{ trackName: 'Test Song (Remastered)', artistName: term, collectionName: 'An Album', releaseDate: '1972-05-12', previewUrl: 'https://p/song.m4a' }]
+      ? [{ trackName: 'Test Song (Remastered)', artistName: term, collectionName: 'An Album', releaseDate: '1972-05-12', previewUrl: 'https://p/song.m4a', trackViewUrl: 'https://music.apple.com/song/1' }]
       : []
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ results: songs }) } }
   })
@@ -392,6 +392,7 @@ test('/tune plays a preview and takes a guess at the song', async ($, on) => {
   const answered = (await $.command.run({ command: 'answer', args: 'test song' }))?.text ?? ''
   expect(answered).toContain('✅ Right! +5')
   expect(answered).toContain('"Test Song" by')
+  expect(answered).toContain('https://music.apple.com/song/1')
   // The next card goes back to the rotation.
   expect((await $.command.run({ command: 'next', args: '' }))?.text).not.toContain('Name that tune')
 })

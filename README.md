@@ -175,6 +175,37 @@ A separate game you play in a browser, on a phone or a computer. You don't need 
 
 Everyone needs a Claude account to open it. The owner shares it from the page's **Share** menu. On a personal Claude account, only people invited **by email as Editors** can post to the board, and only while the page isn't shared by public link. Everyone else can play and watch, and their score stays on their own device.
 
+## What the mod runs, fetches and stores
+
+Claude Code shows a trust warning when you install a third-party mod. Here is everything this one does, so you can decide.
+
+**Runs on your computer.** The mod runs as JavaScript inside Claude Code, with your user's permissions. The one outside program it starts is `curl`, to download album covers so the Claude app can draw them. The address comes from Apple's or Wikipedia's data and is passed as a plain argument, never as part of a command.
+
+**Fetches from the internet,** only while "Trivia from the internet" is on:
+
+| Site | What it asks for |
+| --- | --- |
+| `opentdb.com` | Music quiz questions |
+| `itunes.apple.com` | Song lists for an artist, and Name That Tune previews |
+| `en.wikipedia.org` | A short album summary and cover |
+| `upload.wikimedia.org`, `is1-ssl.mzstatic.com` | Album cover images |
+
+It sends nothing about you, your code or your files: only artist and album names in its searches.
+
+**Reads your prompts.** Right after it shows you a trivia card, it reads your next message. If that message is a short reply (a guess, a letter, `hint`, `next`, `yes`), the mod answers it and Claude never sees it. Anything else passes through to Claude untouched, and the mod stops listening until you ask for another card.
+
+**Shows card text in the chat.** Cards are slash-command output, so Claude can read them in the conversation, including question text that came from the sites above.
+
+**Stores on your computer.** Your score, your decade or genre choice, and which artists and Open Trivia DB questions it has already used, so they don't repeat. Nothing is stored in this repository or sent anywhere.
+
+## Credits and licenses
+
+- The mod's code and the 60 hand-written albums are under the [MIT License](LICENSE).
+- Questions from [Open Trivia DB](https://opentdb.com) are licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Cards from it are labeled "Open Trivia DB".
+- Album summaries come from [Wikipedia](https://en.wikipedia.org) under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Each one links to its article.
+- Song data, previews and artwork come from the Apple [iTunes Search API](https://performance-partners.apple.com/search-api). Name That Tune links each song to Apple Music after the answer. Record Trivia isn't affiliated with or endorsed by Apple.
+- Album covers belong to their artists and labels. The mod shows them while you play, and never stores them in this repository.
+
 ## Sharing the mod
 
 Once this repository is public, anyone installs the mod with the two commands under [Install the mod](#install-the-mod). To share it with a few people while it's private, add them under the repository's **Settings → Collaborators**. Your scores and settings stay on your own computer; nothing private is stored in this repository.
@@ -218,3 +249,7 @@ Then publish `web/record-trivia.html` as an artifact on claude.ai.
 ## Changes
 
 See [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE)
