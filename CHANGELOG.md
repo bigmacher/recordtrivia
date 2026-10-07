@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.5
+
+- A listing icon at `.claude-plugin/icon.png`.
+
 ## 0.5.4
 
 - README: the exact cover-download command, every host the mod contacts with what it sends to each, and what it stores and never sends.
