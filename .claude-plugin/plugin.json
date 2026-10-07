@@ -1,0 +1,53 @@
+{
+  "name": "record-trivia",
+  "version": "0.1.0",
+  "author": {
+    "name": "bigmacher"
+  },
+  "description": "Record & music trivia above the prompt while Claude works, from your Discogs collection, Open Trivia DB and Wikipedia",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "discogsUsername": {
+      "type": "string",
+      "title": "Discogs username",
+      "description": "Whose collection to build trivia from. Leave empty to use the built-in deck only.",
+      "default": "",
+      "required": false
+    },
+    "discogsToken": {
+      "type": "string",
+      "title": "Discogs personal access token",
+      "description": "Needed if your collection is private (Discogs > Settings > Developers > Generate new token).",
+      "sensitive": true,
+      "required": false
+    },
+    "webTrivia": {
+      "type": "boolean",
+      "title": "Trivia from the internet",
+      "description": "Mix in music quiz questions from Open Trivia DB and album facts from Wikipedia.",
+      "default": true,
+      "required": false
+    },
+    "rotateSeconds": {
+      "type": "number",
+      "title": "Seconds per card",
+      "description": "How long each trivia card shows before the next one (the answer is revealed halfway).",
+      "default": 20,
+      "required": false
+    },
+    "pointsRight": {
+      "type": "number",
+      "title": "Points for a right answer",
+      "description": "Added to your score for each right guess.",
+      "default": 10,
+      "required": false
+    },
+    "pointsWrong": {
+      "type": "number",
+      "title": "Points off for a wrong answer",
+      "description": "Taken off your score for each wrong guess.",
+      "default": 5,
+      "required": false
+    }
+  }
+}

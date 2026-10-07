@@ -1,0 +1,41 @@
+export type Trivia = {
+  album: string
+  artist: string
+  year?: number
+  fact?: string
+  question?: string
+  answer?: string
+  choices?: string[]
+  // Wrong answers that let the card play as multiple choice.
+  wrong?: string[]
+  // What the question asks about (year, label, style, added, track, count, have).
+  kind?: string
+  // The question is about the year, so it stays hidden until the answer.
+  isYearHidden?: boolean
+  source: 'deck' | 'discogs' | 'web'
+  releaseId?: number
+  url?: string
+  coverUrl?: string
+  coverThumbUrl?: string
+  isEnriched?: boolean
+}
+
+export type Score = { points: number; right: number; wrong: number; streak: number }
+
+export type WikiNote = { extract: string; url: string; imageUrl?: string }
+
+declare module 'claude-code' {
+  interface PluginState {
+    'record-trivia': {
+      index: number
+      isRevealed: boolean
+      fromDiscogs: Trivia[]
+      fromWeb: Trivia[]
+      wiki: Record<string, WikiNote | null>
+      covers: Record<string, string | null>
+      discogsStatus: string
+      awaiting: 'answer' | 'next' | 'none'
+      score: Score
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "recordtrivia",
+  "owner": { "name": "bigmacher" },
+  "plugins": [{ "name": "record-trivia", "source": "./" }]
+}
