@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.4
+
+- README: the exact cover-download command, every host the mod contacts with what it sends to each, and what it stores and never sends.
+
 ## 0.5.3
 
 - Rename a variable named `h` in `hooks/register.tsx`, which the directory reserves for JSX.

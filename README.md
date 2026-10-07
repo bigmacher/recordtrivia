@@ -186,24 +186,32 @@ Everyone needs a Claude account to open it. The owner shares it from the page's 
 
 Claude Code shows a trust warning when you install a third-party mod. Here is everything this one does, so you can decide.
 
-**Runs on your computer.** The mod runs as JavaScript inside Claude Code, with your user's permissions. The one outside program it starts is `curl`, to download album covers so the Claude app can draw them. The address comes from Apple's or Wikipedia's data and is passed as a plain argument, never as part of a command.
+**Runs on your computer.** The mod runs as JavaScript inside Claude Code, with your user's permissions. It runs one command, and only to download an album cover so the Claude app can draw it (Claude Code's own fetch returns text, not images). The command is always exactly this, in `downloadBase64` in `hooks/register.tsx`:
 
-**Fetches from the internet,** only while "Trivia from the internet" is on:
+```
+sh -c 'curl -sSfL --max-time 10 -A "$2" "$1" | base64 | tr -d "\n"' sh <cover address> <user agent>
+```
 
-| Site | What it asks for |
-| --- | --- |
-| `opentdb.com` | Music quiz questions |
-| `itunes.apple.com` | Song lists for an artist, and Name That Tune previews |
-| `en.wikipedia.org` | A short album summary and cover |
-| `upload.wikimedia.org`, `is1-ssl.mzstatic.com` | Album cover images |
+It starts `sh`, which runs `curl` to download the image, `base64` to turn it into text and `tr` to join the lines. The command text is fixed. Only two things change: the cover address, which comes from Apple's or Wikipedia's data (an `https://` address on `is1-ssl.mzstatic.com` or `upload.wikimedia.org`), and the fixed user agent `RecordTriviaClaudeMod/0.1 (+https://github.com/bigmacher/recordtrivia)`. Both go in as separate arguments (`$1` and `$2`), never as part of the command text, so neither can change what runs. Nothing it downloads is run: the image is only shown.
 
-It sends nothing about you, your code or your files: only artist and album names in its searches.
+**Contacts these hosts, and nothing else,** only while "Trivia from the internet" is on. Every request is an HTTPS `GET` with the user agent above and no other headers.
 
-**Reads your prompts.** Right after it shows you a trivia card, it reads your next message. If that message is a short reply (a guess, a letter, `hint`, `next`, `yes`), the mod answers it and Claude never sees it. Anything else passes through to Claude untouched, and the mod stops listening until you ask for another card.
+| Host | Address | What the mod sends | What comes back |
+| --- | --- | --- | --- |
+| `opentdb.com` | `/api_token.php`, `/api.php` | A session token that Open Trivia DB itself gave out earlier, so questions don't repeat | Music quiz questions and a token |
+| `itunes.apple.com` | `/search` | An artist name, or an artist and album name, from the mod's built-in lists (`hooks/apple-quiz.ts`, `hooks/deck.ts`) | Song lists, preview links and cover addresses |
+| `en.wikipedia.org` | `/api/rest_v1/page/summary/<title>` | An album or artist title from the card being shown | A short summary, a link and a cover address |
+| `upload.wikimedia.org`, `is1-ssl.mzstatic.com` | Cover addresses from the results above | Nothing but the request for the image (through the `curl` command above) | An album cover image |
+
+The code also has a request to `api.discogs.com`, for building questions from a Discogs record collection. That feature is switched off: the username it needs is fixed to empty in `hooks/register.tsx`, so this request never runs.
+
+**Never sends** your prompts, the conversation, your code, your files, your score or your settings. Only the items in the "What the mod sends" column leave your computer.
+
+**Reads your prompts.** Right after it shows you a trivia card, it reads your next message, only on your computer and only to check it as an answer. If that message is a short reply (a guess, a letter, `hint`, `next`, `yes`), the mod answers it and Claude never sees it. Anything else passes through to Claude untouched, and the mod stops listening until you ask for another card. What you type is never sent to any of the hosts above.
 
 **Shows card text in the chat.** Cards are slash-command output, so Claude can read them in the conversation, including question text that came from the sites above.
 
-**Stores on your computer.** Your score, your decade or genre choice, and which artists and Open Trivia DB questions it has already used, so they don't repeat. Nothing is stored in this repository or sent anywhere.
+**Stores on your computer,** in Claude Code's storage for the mod: your score, your decade or genre choice, which artists it has already asked about, and the Open Trivia DB session token. Of these, only the token is ever sent, and only back to `opentdb.com`, which issued it. Nothing is stored in this repository.
 
 ## Credits and licenses
 
