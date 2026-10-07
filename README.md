@@ -192,7 +192,7 @@ Claude Code shows a trust warning when you install a third-party mod. Here is ev
 sh -c 'curl -sSfL --max-time 10 -A "$2" "$1" | base64 | tr -d "\n"' sh <cover address> <user agent>
 ```
 
-It starts `sh`, which runs `curl` to download the image, `base64` to turn it into text and `tr` to join the lines. The command text is fixed. Only two things change: the cover address, which comes from Apple's or Wikipedia's data (an `https://` address on `is1-ssl.mzstatic.com` or `upload.wikimedia.org`), and the fixed user agent `RecordTriviaClaudeMod/0.1 (+https://github.com/bigmacher/recordtrivia)`. Both go in as separate arguments (`$1` and `$2`), never as part of the command text, so neither can change what runs. Nothing it downloads is run: the image is only shown.
+It starts `sh`, which runs `curl` to download the image, `base64` to turn it into text and `tr` to join the lines. The command text is fixed. Two values are passed in: the cover address, which comes from Apple's or Wikipedia's data (an `https://` address on `is1-ssl.mzstatic.com` or `upload.wikimedia.org`), and the fixed user agent `RecordTriviaClaudeMod/0.1 (+https://github.com/bigmacher/recordtrivia)`. Both go in as separate arguments (`$1` and `$2`), never as part of the command text, so neither can change what runs. Nothing it downloads is run: the image is only shown.
 
 **Contacts these hosts, and nothing else,** only while "Trivia from the internet" is on. Every request is an HTTPS `GET` with the user agent above and no other headers.
 
