@@ -7,6 +7,7 @@ export type ItunesSong = {
   releaseDate?: string
   previewUrl?: string
   artworkUrl100?: string
+  trackViewUrl?: string
 }
 
 export function itunesSearchUrl(term: string): string {
@@ -47,6 +48,8 @@ export function tuneCard(songs: ItunesSong[], artist: string, seed: number): Tri
     answer: track,
     fact: `"${track}" by ${song.artistName}, from ${cleanTrackName(song.collectionName ?? '')}${year ? ` (${year})` : ''}.`,
     coverUrl: song.artworkUrl100?.replace('100x100bb', '300x300bb'),
+    // Apple asks that its previews link back to the song, shown with the answer.
+    url: song.trackViewUrl,
     kind: 'tune',
     isCoverHidden: true,
     source: 'web',

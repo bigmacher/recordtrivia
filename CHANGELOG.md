@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- MIT license, plus `license`, `homepage`, `repository` and `keywords` in `plugin.json`.
+- README: a section on everything the mod runs, fetches, reads and stores, and credits for the data sources and their licenses.
+- Name That Tune links each song to Apple Music after the answer.
+
 ## 0.4.0
 
 - Discogs collections are switched off for now: their settings are gone, and the `/trivia pane` button that synced them is now **Refresh**, which fetches more internet questions.
