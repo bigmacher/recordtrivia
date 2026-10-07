@@ -229,3 +229,36 @@ test('collection questions borrow wrong answers from other records', async () =>
   expect(first?.wrong?.length).toBe(3)
   expect(first?.wrong).not.toContain('RCA')
 })
+
+test('quiz questions come from Open Trivia DB with a token and mix in every other card', async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  const urls: string[] = []
+  const quiz = (n: number) => ({
+    type: 'multiple',
+    question: encodeURIComponent(`Quiz question ${n}?`),
+    correct_answer: 'Right',
+    incorrect_answers: ['Wrong 1', 'Wrong 2', 'Wrong 3'],
+  })
+  on('http.fetch', (_$, e) => {
+    urls.push(e.url)
+    const body = e.url.includes('api_token.php')
+      ? { response_code: 0, token: 'tok' }
+      : e.url.includes('opentdb.com/api.php')
+        ? { response_code: 0, results: [quiz(1), quiz(2), quiz(3)] }
+        : {}
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(body) } }
+  })
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', () => ({ cwd: '/' }))
+  await $.session.start({ cwd: '/', surface: null, isInteractive: true } as never)
+  // The first batch is fetched in the background as the session starts.
+  for (let i = 0; i < 20 && !urls.some(u => u.includes('opentdb.com/api.php')); i++) await clock.advance(0)
+  await clock.advance(0)
+
+  const seen: string[] = []
+  for (let i = 0; i < 8; i++) seen.push((await $.command.run({ command: 'next', args: '' }))?.text ?? '')
+  const quizCards = seen.filter(t => t.includes('Quiz question'))
+  expect(quizCards.length).toBe(4)
+  expect(urls.some(u => u.includes('&token=tok'))).toBe(true)
+})

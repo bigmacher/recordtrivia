@@ -8,7 +8,7 @@ import { addDistractors, varyCard } from './variety'
 import { cardsFromPage, enrichCard } from './discogs'
 import type { CollectionPage, Release } from './discogs'
 import { COVER_PX, MAX_COVER_BASE64, coverLineOf, coverSvg, wikimediaThumb, withoutCoverLine } from './covers'
-import { OPEN_TDB_URL, cardsFromOpenTdb, noteFromSummary, wikiCandidates, wikiKey } from './web'
+import { OPEN_TDB_TOKEN_URL, OPEN_TDB_URL, cardsFromOpenTdb, noteFromSummary, wikiCandidates, wikiKey } from './web'
 import type { OpenTdbResponse, WikiSummary } from './web'
 
 const PANE = 'record-trivia'
@@ -36,27 +36,26 @@ function discogsHeaders(settings: Settings): Record<string, string> {
 }
 
 // Albums from your collection (or the built-in crate), with an internet quiz question every third card.
-async function deckOf($: EngineInterface): Promise<Trivia[]> {
+// Every third card is an internet quiz question (every other one when the albums are only the built-in deck).
+function quizEvery(hasCollection: boolean): number {
+  return hasCollection ? 3 : 2
+}
+
+// The card at a position: albums and quiz questions each cycle on their own, so neither list limits the other.
+async function cardAt($: EngineInterface, position: number): Promise<{ card: Trivia; total: number; quizSlot?: number }> {
   const mine = await read($, fromDiscogs)
   const albums = mine.length ? mine : DECK
   const quiz = await read($, fromWeb)
-  if (!quiz.length) return albums
-  const out: Trivia[] = []
-  albums.forEach((album, i) => {
-    out.push(album)
-    const q = quiz[Math.floor(i / 2) % quiz.length]
-    if (i % 2 === 1 && q) out.push(q)
-  })
+  const every = quizEvery(mine.length > 0)
+  const total = albums.length + quiz.length
+  if (quiz.length && position % every === every - 1) {
+    const quizSlot = Math.floor(position / every)
+    return { card: quiz[quizSlot % quiz.length]!, total, quizSlot }
+  }
+  const albumSlot = quiz.length ? position - Math.floor((position + 1) / every) : position
+  const card = albums[albumSlot % albums.length] ?? DECK[0]!
 
-  return out
-}
-
-async function cardAt($: EngineInterface, position: number): Promise<{ card: Trivia; total: number }> {
-  const deck = await deckOf($)
-
-  const card = deck[position % deck.length] ?? DECK[0]!
-
-  return { card: varyCard(card, deck, position), total: deck.length }
+  return { card: varyCard(card, albums, position), total }
 }
 
 async function lookUpWikipedia($: EngineInterface, card: Trivia) {
@@ -100,13 +99,38 @@ async function prepareAt($: EngineInterface, settings: Settings, position: numbe
   if (settings.isWebOn) await lookUpWikipedia($, card)
 }
 
+async function openTdbToken($: EngineInterface, command: 'request' | 'reset', token?: string): Promise<string | undefined> {
+  const query = command === 'reset' && token ? `command=reset&token=${encodeURIComponent(token)}` : 'command=request'
+  const res = await $.http.fetch(`${OPEN_TDB_TOKEN_URL}?${query}`, { headers: { 'User-Agent': USER_AGENT } })
+  const body = JSON.parse(res.text) as { response_code?: number; token?: string }
+  const fresh = body.response_code === 0 ? (body.token ?? token) : undefined
+  if (fresh) await $.store.set('opentdbToken', fresh)
+  return fresh
+}
+
+// Adds the next 50 unseen questions; the token, kept across sessions, means no repeats until all ~500 are done.
 async function pullWebQuiz($: EngineInterface, settings: Settings) {
   if (!settings.isWebOn) return
   try {
-    const res = await $.http.fetch(OPEN_TDB_URL, { headers: { 'User-Agent': USER_AGENT } })
-    if (!res.ok) return
-    const cards = cardsFromOpenTdb(JSON.parse(res.text) as OpenTdbResponse)
-    if (cards.length) await update($, fromWeb, () => cards)
+    let token = ((await $.store.get('opentdbToken')) as string | undefined) ?? (await openTdbToken($, 'request'))
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const url = token ? `${OPEN_TDB_URL}&token=${encodeURIComponent(token)}` : OPEN_TDB_URL
+      const res = await $.http.fetch(url, { headers: { 'User-Agent': USER_AGENT } })
+      if (!res.ok) return
+      const body = JSON.parse(res.text) as OpenTdbResponse
+      // 3: the token expired; 4: every question has been served, so start the round again.
+      if (body.response_code === 3) token = await openTdbToken($, 'request')
+      else if (body.response_code === 4) token = await openTdbToken($, 'reset', token)
+      else {
+        const cards = cardsFromOpenTdb(body)
+        if (!cards.length) return
+        await update($, fromWeb, have => {
+          const seen = new Set(have.map(c => c.question))
+          return [...have, ...cards.filter(c => !seen.has(c.question))].slice(-500)
+        })
+        return
+      }
+    }
   } catch {
     // Keep whatever questions we already have.
   }
@@ -114,8 +138,12 @@ async function pullWebQuiz($: EngineInterface, settings: Settings) {
 
 async function nextCard($: EngineInterface, settings: Settings) {
   await update($, isRevealed, () => false)
-  await update($, index, i => i + 1)
-  void prepareAt($, settings, (await read($, index)) + 1)
+  const position = await update($, index, i => i + 1)
+  void prepareAt($, settings, position + 1)
+  // Running low on fresh quiz questions: fetch the next batch.
+  const { quizSlot } = await cardAt($, position)
+  const quiz = await read($, fromWeb)
+  if (quizSlot !== undefined && quizSlot % Math.max(1, quiz.length) >= quiz.length - 5) void pullWebQuiz($, settings)
 }
 
 async function syncCollection($: EngineInterface, settings: Settings) {

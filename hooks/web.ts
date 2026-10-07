@@ -1,7 +1,9 @@
 import type { Trivia, WikiNote } from '../types'
 
-// Open Trivia DB, category 12 is "Entertainment: Music"; url3986 keeps the text decodable.
+// Open Trivia DB, category 12 is "Entertainment: Music" (about 500 questions); url3986 keeps the text decodable.
 export const OPEN_TDB_URL = 'https://opentdb.com/api.php?amount=50&category=12&encode=url3986'
+// A session token makes the API hand out each question once until all have been served.
+export const OPEN_TDB_TOKEN_URL = 'https://opentdb.com/api_token.php'
 
 type OpenTdbQuestion = {
   type?: string
