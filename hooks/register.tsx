@@ -19,6 +19,9 @@ const USER_AGENT = 'RecordTriviaClaudeMod/0.1 (+https://github.com/bigmacher/rec
 
 const index = atom({ plugin: 'record-trivia', key: 'index' } as const, 0)
 const isRevealed = atom({ plugin: 'record-trivia', key: 'isRevealed' } as const, false)
+// The strip above the prompt rotates its own card, so it never moves the one you are answering.
+const bandIndex = atom({ plugin: 'record-trivia', key: 'bandIndex' } as const, 0)
+const isBandRevealed = atom({ plugin: 'record-trivia', key: 'isBandRevealed' } as const, false)
 const fromDiscogs = atom({ plugin: 'record-trivia', key: 'fromDiscogs' } as const, [])
 const fromWeb = atom({ plugin: 'record-trivia', key: 'fromWeb' } as const, [])
 const wiki = atom({ plugin: 'record-trivia', key: 'wiki' } as const, {})
@@ -35,7 +38,6 @@ function discogsHeaders(settings: Settings): Record<string, string> {
   return settings.token ? { ...base, Authorization: `Discogs token=${settings.token}` } : base
 }
 
-// Albums from your collection (or the built-in crate), with an internet quiz question every third card.
 // Every third card is an internet quiz question (every other one when the albums are only the built-in deck).
 function quizEvery(hasCollection: boolean): number {
   return hasCollection ? 3 : 2
@@ -138,7 +140,15 @@ async function pullWebQuiz($: EngineInterface, settings: Settings) {
 
 async function nextCard($: EngineInterface, settings: Settings) {
   await update($, isRevealed, () => false)
-  const position = await update($, index, i => i + 1)
+  await afterAdvance($, settings, await update($, index, i => i + 1))
+}
+
+async function nextBandCard($: EngineInterface, settings: Settings) {
+  await update($, isBandRevealed, () => false)
+  await afterAdvance($, settings, await update($, bandIndex, i => i + 1))
+}
+
+async function afterAdvance($: EngineInterface, settings: Settings, position: number) {
   void prepareAt($, settings, position + 1)
   // Running low on fresh quiz questions: fetch the next batch.
   const { quizSlot } = await cardAt($, position)
@@ -309,17 +319,46 @@ const YES = /^(y|ya|yes|yeah|yep|yup|sure|ok|okay|next|another|more|go)[.!]*$/i
 const REVEAL = /^(answer|reveal|tell me|idk|i don'?t know|don'?t know|dunno|no idea|give up|pass)[.!]*$/i
 
 const SKIP = /^(next|skip)[.!]*$/i
+const RESTART = /^(restart|reset|new game|start over|start again|play again)( (the )?(trivia|game))?[.!]*$/i
+const RESTART_ANYTIME = /^(restart|reset|new|start) (the )?trivia( game)?[.!]*$/i
+
+type TriviaReply = { command: 'next' | 'answer' | 'trivia'; args: string }
 
 // A short reply right after a card is about the card, not a prompt for Claude.
 // While a question is open, anything short that is not a question to Claude is a guess.
-function triviaReplyTo(text: string, state: 'answer' | 'next' | 'none'): { command: 'next' | 'answer'; args: string } | undefined {
+function triviaReplyTo(text: string, state: 'answer' | 'next' | 'none'): TriviaReply | undefined {
   const reply = text.trim().replace(/[‘’]/g, "'")
+  if (RESTART_ANYTIME.test(reply) || (state !== 'none' && RESTART.test(reply))) return { command: 'trivia', args: 'restart' }
   if (state === 'none' || !reply || reply.length > 40 || reply.startsWith('/')) return undefined
   if (state === 'next') return YES.test(reply) ? { command: 'next', args: '' } : undefined
   if (SKIP.test(reply)) return { command: 'next', args: '' }
   if (REVEAL.test(reply)) return { command: 'answer', args: '' }
   if (reply.includes('?') || reply.split(/\s+/).length > 6) return undefined
   return { command: 'answer', args: reply }
+}
+
+// What /trivia, /answer and /next do, shared with replies typed in the chat.
+async function runTrivia($: EngineInterface, settings: Settings, reply: TriviaReply): Promise<string> {
+  const action = reply.args.trim()
+  if (reply.command === 'next' || (reply.command === 'trivia' && action.toLowerCase() === 'next')) {
+    await nextCard($, settings)
+    return cardReply($, settings)
+  }
+  if (reply.command === 'answer' || (reply.command === 'trivia' && /^(answer|reveal)$/i.test(action))) {
+    const verdict = reply.command === 'answer' ? await judge($, settings, action) : undefined
+    await update($, isRevealed, () => true)
+    return cardReply($, settings, verdict)
+  }
+  if (reply.command === 'trivia' && action.toLowerCase() === 'restart') {
+    await update($, score, () => ZERO)
+    await $.store.set('score', ZERO)
+    const now = await $.clock.now()
+    await update($, index, () => now % 1000)
+    await update($, isRevealed, () => false)
+    return cardReply($, settings, '🔄 New game! Score: 0')
+  }
+
+  return cardReply($, settings)
 }
 
 export const register: Register = (on, options) => {
@@ -336,7 +375,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'trivia',
       description: 'Show a record trivia card (answer, next, pane)',
-      argumentHint: '[answer|next|pane]',
+      argumentHint: '[answer|next|restart|pane]',
       immediate: true,
     })
     await $.command.register({
@@ -359,6 +398,7 @@ export const register: Register = (on, options) => {
     })
     const now = await $.clock.now()
     await update($, index, () => now % 1000)
+    await update($, bandIndex, () => (now + 500) % 1000)
     void (async () => {
       await pullWebQuiz($, settings)
       await syncCollection($, settings)
@@ -371,8 +411,8 @@ export const register: Register = (on, options) => {
     // Flip the card to its answer, then advance, on a steady beat.
     $.clock.every(halfMs, () => {
       void (async () => {
-        if (await read($, isRevealed)) await nextCard($, settings)
-        else await update($, isRevealed, () => true)
+        if (await read($, isBandRevealed)) await nextBandCard($, settings)
+        else await update($, isBandRevealed, () => true)
       })()
     })
 
@@ -387,37 +427,36 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     await update($, awaiting, () => 'none')
-    $.command.run(reply).catch(() => undefined)
+    // A command cannot run from inside this hook, so it runs a moment later, on its own.
+    $.clock.after(20, () => {
+      $.command.run(reply).catch(async () => {
+        const text = await runTrivia($, settings, reply)
+        await $.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } }).catch(() => undefined)
+      })
+    })
 
-    return { drop: reply.command === 'next' ? '▶ Next record' : reply.args ? `▶ Your guess: ${reply.args}` : '▶ The answer' }
+    const said = reply.command === 'next' ? '▶ Next record' : reply.command === 'trivia' ? '▶ New game' : reply.args ? `▶ Your guess: ${reply.args}` : '▶ The answer'
+    return { drop: said }
   }).catch(($, e, next) => next(e))
 
   // A fresh card each time Claude starts working.
   on('turn.start', async ($, e, next) => {
-    await nextCard($, settings)
+    await nextBandCard($, settings)
 
     return next(e)
   })
 
   // Prints the card into the chat, so it reads the same on a phone as in a terminal.
   on('command.run', { command: 'trivia' }, async ($, e) => {
-    const action = e.args.trim().toLowerCase()
-    if (action === 'pane') {
+    if (e.args.trim().toLowerCase() === 'pane') {
       await $.ui.open({ id: PANE, title: 'Record trivia' })
       return { text: 'Record trivia pane opened.' }
     }
-    if (action === 'next') await nextCard($, settings)
-    if (action === 'answer' || action === 'reveal') await update($, isRevealed, () => true)
 
-    return { text: await cardReply($, settings) }
+    return { text: await runTrivia($, settings, { command: 'trivia', args: e.args }) }
   })
 
-  on('command.run', { command: 'answer' }, async ($, e) => {
-    const verdict = await judge($, settings, e.args.trim())
-    await update($, isRevealed, () => true)
-
-    return { text: await cardReply($, settings, verdict) }
-  })
+  on('command.run', { command: 'answer' }, async ($, e) => ({ text: await runTrivia($, settings, { command: 'answer', args: e.args }) }))
 
   on('command.run', { command: 'score' }, async ($, e) => {
     if (e.args.trim().toLowerCase() === 'reset') {
@@ -429,11 +468,7 @@ export const register: Register = (on, options) => {
     return { text: `${scoreLine(await read($, score))}\n\n+${settings.pointsRight} for a right answer, −${settings.pointsWrong} for a wrong one. /score reset starts over.` }
   })
 
-  on('command.run', { command: 'next' }, async $ => {
-    await nextCard($, settings)
-
-    return { text: await cardReply($, settings) }
-  })
+  on('command.run', { command: 'next' }, async $ => ({ text: await runTrivia($, settings, { command: 'next', args: '' }) }))
 
   // Draws the card's row in the chat with its cover where the surface draws SVG (the apps).
   on('ui.render', { component: 'CommandOutput', props: { command: 'trivia' } }, ($, e, next) => drawCardRow($, e, next))
@@ -443,8 +478,8 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || !e.props.isWorking) return next(e)
     const { Box, Text } = $.ui.resolve(e)
-    const { card } = await cardAt($, await read($, index))
-    const revealed = await read($, isRevealed)
+    const { card } = await cardAt($, await read($, bandIndex))
+    const revealed = await read($, isBandRevealed)
     const note = (await read($, wiki))[wikiKey(card)]
 
     return (

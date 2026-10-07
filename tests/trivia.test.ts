@@ -262,3 +262,27 @@ test('quiz questions come from Open Trivia DB with a token and mix in every othe
   expect(quizCards.length).toBe(4)
   expect(urls.some(u => u.includes('&token=tok'))).toBe(true)
 })
+
+test('a typed guess is scored and answered a moment later', async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  await $.command.run({ command: 'score', args: 'reset' })
+  await $.command.run({ command: 'trivia', args: '' })
+  expect(await $.prompt.submit({ text: 'Piano man', wait: false })).toEqual({ drop: '▶ Your guess: Piano man' })
+  await clock.advance(100)
+  expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: -5 (0 right, 1 wrong)')
+})
+
+test('"restart trivia" starts a new game with the score at 0', async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  await $.command.run({ command: 'trivia', args: '' })
+  await $.command.run({ command: 'answer', args: 'wrong guess' })
+  expect(await $.prompt.submit({ text: 'Restart trivia', wait: false })).toEqual({ drop: '▶ New game' })
+  await clock.advance(100)
+  expect((await $.command.run({ command: 'score', args: '' }))?.text).toContain('Score: 0 (0 right, 0 wrong)')
+  const fresh = await $.command.run({ command: 'trivia', args: 'restart' })
+  expect(fresh?.text).toContain('🔄 New game! Score: 0')
+})

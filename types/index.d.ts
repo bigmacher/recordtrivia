@@ -29,6 +29,8 @@ declare module 'claude-code' {
     'record-trivia': {
       index: number
       isRevealed: boolean
+      bandIndex: number
+      isBandRevealed: boolean
       fromDiscogs: Trivia[]
       fromWeb: Trivia[]
       wiki: Record<string, WikiNote | null>
