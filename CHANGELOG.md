@@ -4,6 +4,8 @@
 
 - Screenshots of the trivia box and the web game in the README.
 - A Buy Me a Coffee link: a Sponsor button on GitHub (`.github/FUNDING.yml`), a README badge and Support section, and a link in the web game's footer.
+- Fix: the card you are answering no longer changes when new quiz or Apple Music questions arrive in the background. Your guess is graded against the card you saw.
+- Fix: a short request to Claude right after a card, like "run the tests" or "commit and push", goes to Claude instead of being graded as a guess. "ok", "sure" and "help" go to Claude too; reply "yes" for the next card and "hint" for a clue.
 
 ## 0.5.1
 

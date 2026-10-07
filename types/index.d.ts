@@ -47,8 +47,8 @@ declare module 'claude-code' {
       score: Score
       hintsUsed: number
       filterText: string
-      // A card that is not from the rotation (a Name That Tune round), shown until the next card.
-      special: Trivia | null
+      // The card open in the chat (a rotation card or a Name That Tune round), kept until the next card.
+      current: Trivia | null
     }
   }
 }
