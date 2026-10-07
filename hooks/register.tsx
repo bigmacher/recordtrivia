@@ -645,8 +645,10 @@ export const register: Register = (on, options) => {
     const revealed = await read($, isBandRevealed)
     const note = (await read($, wiki))[wikiKey(card)]
 
+    // A rounded, colored frame with its own label, so the card stands apart from Claude's output.
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1} width={e.props.bodyColumns}>
+        <Text bold color="magenta">♫ RECORD TRIVIA <Text dimColor>· {revealed ? 'answer' : 'think fast'}</Text></Text>
         <Text>
           <Text color="magenta">◉ </Text>
           <Text bold>{headingOf(card, revealed).album}</Text>
